@@ -1,0 +1,40 @@
+{
+  "name": "@phylax-systems/credible-layer-contracts",
+  "description": "Smart contracts for the Credible Layer protocol",
+  "version": "0.0.2",
+  "license": "",
+  "author": {
+    "name": "Phylax Systems",
+    "url": "https://phylax.systems"
+  },
+  "files": [
+    "artifacts",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "prepare": "./shell/create_artifacts.sh",
+    "test": "forge test",
+    "build": "forge build",
+    "format": "forge fmt",
+    "clean": "forge clean"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phylaxsystems/credible-layer-contracts.git"
+  },
+  "keywords": [
+    "solidity",
+    "ethereum",
+    "smart-contracts",
+    "credible-layer",
+    "assertions"
+  ],
+  "bugs": {
+    "url": "https://github.com/phylaxsystems/credible-layer-contracts/issues"
+  },
+  "homepage": "https://github.com/phylaxsystems/credible-layer-contracts#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}

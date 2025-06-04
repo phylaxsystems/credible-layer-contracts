@@ -1,0 +1,45 @@
+name: Release and Publish
+
+on:
+  push:
+    tags:
+      - "*.*.*"
+
+env:
+  ARTIFACTS_PATH: "artifacts/"
+
+jobs:
+  create-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+      - name: Create artifacts
+        run: ./shell/create_artifacts.sh
+      - name: Upload artifact directory
+        uses: actions/upload-artifact@v4
+        with:
+          name: credible-layer-contracts-artifacts
+          path: artifacts/
+  release-npm:
+    needs: create-artifacts
+    uses: phylaxsystems/actions/.github/workflows/release-npm.yaml@main
+    with:
+      artifact_name: credible-layer-contracts-artifacts
+      artifacts_path: artifacts/
+      ignore_scripts: true
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+  release-github:
+    needs: create-artifacts
+    permissions:
+      contents: write
+    uses: phylaxsystems/actions/.github/workflows/release-github.yaml@main
+    secrets:
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+    with:
+      artifact_name: credible-layer-contracts-artifacts
+      artifacts_path: artifacts/
