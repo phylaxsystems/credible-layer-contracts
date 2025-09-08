@@ -21,6 +21,24 @@ contract StateOracleBase is Test, ProxyHelper {
     StateOracle stateOracle;
     IAdminVerifier adminVerifier;
 
+    /// @notice Emitted when a new assertion adopter is registered
+    /// @param contractAddress The address of the registered contract
+    /// @param manager The address authorized to manage the contract's assertions
+    /// @param adminVerifier The admin verifier used to register the assertion adopter
+    event AssertionAdopterAdded(address indexed contractAddress, address indexed manager, IAdminVerifier adminVerifier);
+
+    /// @notice Emitted when a new assertion is added
+    /// @param assertionAdopter The assertion adopter the assertion is associated with
+    /// @param assertionId The unique identifier of the assertion
+    /// @param activationBlock The block number when the assertion becomes active
+    event AssertionAdded(address assertionAdopter, bytes32 assertionId, uint256 activationBlock);
+
+    /// @notice Emitted when an assertion is removed
+    /// @param assertionAdopter The assertion adopter where the assertion is removed from
+    /// @param assertionId The unique identifier of the removed assertion
+    /// @param deactivationBlock The block number when the assertion is going to be inactive
+    event AssertionRemoved(address assertionAdopter, bytes32 assertionId, uint256 deactivationBlock);
+
     /// @notice Modifier to ensure the address is not the proxy admin
     /// @param _address The address to check
     /// @dev This is needed because proxy admin calls will be processed internally
@@ -129,7 +147,7 @@ contract Register is StateOracleBase {
     function test_expectAssertionAdopterAdded() public {
         // Doesn't check adopter, checks only topic2: manager and emitting address
         vm.expectEmit(false, true, false, false, address(stateOracle));
-        emit StateOracle.AssertionAdopterAdded(address(1), OWNER, adminVerifier);
+        emit AssertionAdopterAdded(address(1), OWNER, IAdminVerifier(adminVerifier));
         registerAssertionAdopter();
     }
 
@@ -186,7 +204,7 @@ contract AddAssertion is StateOracleBase {
         uint128 activationBlock = uint128(block.number) + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
         // Check topic1: adopter, topic2: assertionId, data: activationBlock and emitting address
         vm.expectEmit(true, true, false, true, address(stateOracle));
-        emit StateOracle.AssertionAdded(adopter, assertionId, activationBlock);
+        emit AssertionAdded(adopter, assertionId, activationBlock);
         addAssertionAndAssert(manager, adopter, assertionId);
     }
 
@@ -287,7 +305,7 @@ contract RemoveAssertion is StateOracleBase {
         uint128 deactivationBlock = uint128(block.number) + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
         // Check topic1: adopter, topic2: assertionId, data: deactivationBlock and emitting address
         vm.expectEmit(true, true, false, true, address(stateOracle));
-        emit StateOracle.AssertionRemoved(adopter, assertionId, deactivationBlock);
+        emit AssertionRemoved(adopter, assertionId, deactivationBlock);
 
         vm.prank(manager);
         stateOracle.removeAssertion(adopter, assertionId);

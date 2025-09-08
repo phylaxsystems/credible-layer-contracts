@@ -37,7 +37,7 @@ library AdminVerifierRegistry {
     /// @param adminVerifier The admin verifier to add
     /// @dev Throws an error if the admin verifier is already registered
     function add(mapping(IAdminVerifier => bool) storage adminVerifiers, IAdminVerifier adminVerifier) internal {
-        require(!isRegistered(adminVerifiers, adminVerifier), AdminVerifierAlreadyRegistered());
+        if (!isRegistered(adminVerifiers, adminVerifier)) revert AdminVerifierAlreadyRegistered();
         adminVerifiers[adminVerifier] = true;
         emit AdminVerifierAdded(adminVerifier);
     }
@@ -47,7 +47,7 @@ library AdminVerifierRegistry {
     /// @param adminVerifier The admin verifier to remove
     /// @dev Throws an error if the admin verifier is not registered
     function remove(mapping(IAdminVerifier => bool) storage adminVerifiers, IAdminVerifier adminVerifier) internal {
-        require(isRegistered(adminVerifiers, adminVerifier), AdminVerifierNotRegistered());
+        if (!isRegistered(adminVerifiers, adminVerifier)) revert AdminVerifierNotRegistered();
         adminVerifiers[adminVerifier] = false;
         emit AdminVerifierRemoved(adminVerifier);
     }
