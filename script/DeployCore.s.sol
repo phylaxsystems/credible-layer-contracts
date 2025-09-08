@@ -2,7 +2,8 @@
 pragma solidity ^0.8.19;
 
 import {StateOracle} from "../src/StateOracle.sol";
-import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {TransparentUpgradeableProxy} from
+    "openzeppelin-contracts/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
 import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.sol";
 import {DAVerifierECDSA} from "../src/verification/da/DAVerifierECDSA.sol";
