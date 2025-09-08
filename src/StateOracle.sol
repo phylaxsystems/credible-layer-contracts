@@ -106,8 +106,12 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @notice Ensures caller is the manager of the contract
     /// @param contractAddress The address of the contract being managed
     modifier onlyManager(address contractAddress) {
-        require(assertionAdopters[contractAddress].manager != address(0), AssertionAdopterNotRegistered());
-        require(assertionAdopters[contractAddress].manager == msg.sender, UnauthorizedManager());
+        if (assertionAdopters[contractAddress].manager == address(0)) {
+            revert AssertionAdopterNotRegistered();
+        }
+        if (assertionAdopters[contractAddress].manager != msg.sender) {
+            revert UnauthorizedManager();
+        }
         _;
     }
 
@@ -116,7 +120,9 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @param daVerifier The address of the DA verifier
     /// @param maxAssertionsPerAA Maximum number of assertions per assertion adopter
     constructor(uint128 assertionTimelockBlocks, address daVerifier, uint32 maxAssertionsPerAA) {
-        require(assertionTimelockBlocks > 0, InvalidAssertionTimelock());
+        if (assertionTimelockBlocks == 0) {
+            revert InvalidAssertionTimelock();
+        }
         ASSERTION_TIMELOCK_BLOCKS = assertionTimelockBlocks;
         DA_VERIFIER = IDAVerifier(daVerifier);
         MAX_ASSERTIONS_PER_AA = maxAssertionsPerAA;
@@ -136,9 +142,15 @@ contract StateOracle is Batch, Ownable, Initializable {
     function registerAssertionAdopter(address contractAddress, IAdminVerifier adminVerifier, bytes calldata data)
         external
     {
-        require(adminVerifiers.isRegistered(adminVerifier), AdminVerifierRegistry.AdminVerifierNotRegistered());
-        require(adminVerifier.verifyAdmin(contractAddress, msg.sender, data), UnauthorizedRegistrant());
-        require(assertionAdopters[contractAddress].manager == address(0), AssertionAdopterAlreadyRegistered());
+        if (!adminVerifiers.isRegistered(adminVerifier)) {
+            revert AdminVerifierRegistry.AdminVerifierNotRegistered();
+        }
+        if (!adminVerifier.verifyAdmin(contractAddress, msg.sender, data)) {
+            revert UnauthorizedRegistrant();
+        }
+        if (assertionAdopters[contractAddress].manager != address(0)) {
+            revert AssertionAdopterAlreadyRegistered();
+        }
         assertionAdopters[contractAddress].manager = msg.sender;
         emit AssertionAdopterAdded(contractAddress, msg.sender, adminVerifier);
     }
@@ -152,9 +164,15 @@ contract StateOracle is Batch, Ownable, Initializable {
         external
         onlyManager(contractAddress)
     {
-        require(!hasAssertion(contractAddress, assertionId), AssertionAlreadyExists());
-        require(DA_VERIFIER.verifyDA(assertionId, metadata, proof), InvalidProof());
-        require(assertionAdopters[contractAddress].assertionCount < MAX_ASSERTIONS_PER_AA, TooManyAssertions());
+        if (hasAssertion(contractAddress, assertionId)) {
+            revert AssertionAlreadyExists();
+        }
+        if (!DA_VERIFIER.verifyDA(assertionId, metadata, proof)) {
+            revert InvalidProof();
+        }
+        if (assertionAdopters[contractAddress].assertionCount >= MAX_ASSERTIONS_PER_AA) {
+            revert TooManyAssertions();
+        }
 
         assertionAdopters[contractAddress].assertions[assertionId].activationBlock =
             uint128(block.number) + ASSERTION_TIMELOCK_BLOCKS;
@@ -180,7 +198,9 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @param contractAddress The address of the assertion adopter
     /// @param assertionId The unique identifier of the assertion to remove
     function _removeAssertion(address contractAddress, bytes32 assertionId) internal {
-        require(hasAssertion(contractAddress, assertionId), AssertionDoesNotExist());
+        if (!hasAssertion(contractAddress, assertionId)) {
+            revert AssertionDoesNotExist();
+        }
         assertionAdopters[contractAddress].assertions[assertionId].deactivationBlock =
             uint128(block.number) + ASSERTION_TIMELOCK_BLOCKS;
         assertionAdopters[contractAddress].assertionCount--;
@@ -230,7 +250,9 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @param contractAddress The address of the assertion adopter
     /// @param newManager The address to transfer the manager role to
     function transferManager(address contractAddress, address newManager) external onlyManager(contractAddress) {
-        require(newManager != address(0), InvalidManagerTransferRequest());
+        if (newManager == address(0)) {
+            revert InvalidManagerTransferRequest();
+        }
         assertionAdopters[contractAddress].pendingManager = newManager;
         emit ManagerTransferRequested(contractAddress, msg.sender, newManager);
     }
@@ -238,15 +260,21 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @notice Accepts a manager transfer request
     /// @param contractAddress The address of the assertion adopter
     function acceptManagerTransfer(address contractAddress) external {
-        require(assertionAdopters[contractAddress].pendingManager != address(0), NoPendingManager());
-        require(assertionAdopters[contractAddress].pendingManager == msg.sender, UnauthorizedManager());
+        if (assertionAdopters[contractAddress].pendingManager == address(0)) {
+            revert NoPendingManager();
+        }
+        if (assertionAdopters[contractAddress].pendingManager != msg.sender) {
+            revert UnauthorizedManager();
+        }
         _transferManager(contractAddress, msg.sender);
     }
 
     /// @notice Revokes the manager role from an assertion adopter by the state oracle owner
     /// @param contractAddress The address of the assertion adopter
     function revokeManager(address contractAddress) external onlyOwner {
-        require(assertionAdopters[contractAddress].manager != address(0), AssertionAdopterNotRegistered());
+        if (assertionAdopters[contractAddress].manager == address(0)) {
+            revert AssertionAdopterNotRegistered();
+        }
         _transferManager(contractAddress, address(0));
     }
 
