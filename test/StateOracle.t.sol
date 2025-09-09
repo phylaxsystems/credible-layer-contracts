@@ -54,7 +54,7 @@ contract StateOracleBase is Test, ProxyHelper {
         IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
         verifiers[0] = adminVerifier;
 
-        bytes memory data = abi.encodeWithSelector(StateOracle.initialize.selector, ADMIN, verifiers);
+        bytes memory data = abi.encodeWithSelector(StateOracle.initialize.selector, OWNER, verifiers);
         stateOracle = StateOracle(deployProxy(address(implementation), data));
     }
 
@@ -153,7 +153,7 @@ contract Register is StateOracleBase {
 
     function testFuzz_RevertIf_registerAssertionAdopterAdminVerifierNotAdded() public {
         IAdminVerifier _adminVerifier = IAdminVerifier(new AdminVerifierOwner());
-        vm.prank(ADMIN);
+        vm.prank(OWNER);
         vm.expectRevert(AdminVerifierRegistry.AdminVerifierNotRegistered.selector);
         stateOracle.registerAssertionAdopter(address(1), _adminVerifier, new bytes(0));
     }
@@ -471,7 +471,7 @@ contract AddAdminVerifier is StateOracleBase {
     function test_addAdminVerifier(IAdminVerifier _adminVerifier) public {
         vm.assume(_adminVerifier != adminVerifier);
         assertEq(stateOracle.adminVerifiers(_adminVerifier), false, "Admin verifier should not have been added");
-        vm.prank(ADMIN);
+        vm.prank(OWNER);
         stateOracle.addAdminVerifier(_adminVerifier);
         assertEq(stateOracle.adminVerifiers(_adminVerifier), true, "Admin verifier should be added");
     }
@@ -489,7 +489,7 @@ contract AddAdminVerifier is StateOracleBase {
 
     function testFuzz_RevertIf_addAdminVerifierTwice(IAdminVerifier _adminVerifier) public {
         vm.assume(_adminVerifier != adminVerifier);
-        vm.startPrank(ADMIN);
+        vm.startPrank(OWNER);
         stateOracle.addAdminVerifier(_adminVerifier);
         vm.expectRevert(AdminVerifierRegistry.AdminVerifierAlreadyRegistered.selector);
         stateOracle.addAdminVerifier(_adminVerifier);
@@ -500,7 +500,7 @@ contract AddAdminVerifier is StateOracleBase {
 contract RemoveAdminVerifier is StateOracleBase {
     function test_removeAdminVerifier() public {
         IAdminVerifier _adminVerifier = IAdminVerifier(new AdminVerifierOwner());
-        vm.startPrank(ADMIN);
+        vm.startPrank(OWNER);
         stateOracle.addAdminVerifier(_adminVerifier);
         assertEq(stateOracle.adminVerifiers(_adminVerifier), true, "Admin verifier should have been added");
         stateOracle.removeAdminVerifier(_adminVerifier);
@@ -514,7 +514,7 @@ contract RemoveAdminVerifier is StateOracleBase {
     {
         vm.assume(unauthorizedAdmin != stateOracle.owner());
         IAdminVerifier _adminVerifier = IAdminVerifier(new AdminVerifierOwner());
-        vm.prank(ADMIN);
+        vm.prank(OWNER);
         stateOracle.addAdminVerifier(_adminVerifier);
         assertEq(stateOracle.adminVerifiers(_adminVerifier), true, "Admin verifier should have been added");
         vm.prank(unauthorizedAdmin);
@@ -524,7 +524,7 @@ contract RemoveAdminVerifier is StateOracleBase {
 
     function testFuzz_RevertIf_removeAdminVerifierNotRegistered(IAdminVerifier _adminVerifier) public {
         vm.assume(_adminVerifier != adminVerifier);
-        vm.prank(ADMIN);
+        vm.prank(OWNER);
         vm.expectRevert(AdminVerifierRegistry.AdminVerifierNotRegistered.selector);
         stateOracle.removeAdminVerifier(_adminVerifier);
     }
