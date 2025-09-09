@@ -15,8 +15,6 @@ permissions:
 
 jobs:
   docker-ghcr-push:
-    needs: check-version
-    if: always() && (needs.check-version.result == 'success' || needs.check-version.result == 'skipped')
     uses: phylaxsystems/actions/.github/workflows/release-docker-ghcr.yaml@main
     with:
       rust-binary-name: contracts-utils-${{ github.ref_name }}
