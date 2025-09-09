@@ -1,0 +1,22 @@
+name: Docker GHCR Push - Contracts Utils
+
+on:
+  push:
+    branches:
+    - main
+    - linea
+    tags:
+      - "*.*.*"
+  workflow_dispatch:
+
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+  docker-ghcr-push:
+    uses: phylaxsystems/actions/.github/workflows/release-docker-ghcr.yaml@main
+    with:
+      rust-binary-name: contracts-utils-${{ github.ref_name }}
+      requires-private-deps: false
+      dockerfile-path: Dockerfile
