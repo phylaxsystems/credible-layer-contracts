@@ -27,6 +27,6 @@ contract ProxyHelper is Test {
         address adopter = address(new Adopter());
         address proxy = address(new TransparentUpgradeableProxy(adopter, ADMIN, ""));
 
-        assertEq(ProxyAdmin(getProxyAdmin(proxy)).owner(), ADMIN, "Should be ADMIN");
+        assertEq(getProxyAdmin(proxy), ADMIN, "Should be ADMIN");
     }
 }
