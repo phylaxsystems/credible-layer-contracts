@@ -1,0 +1,9 @@
+cache/
+out/
+lib/
+
+
+# These are omitted on purpose since the submodules need to be initialized
+#.git/
+
+#.gitignore
