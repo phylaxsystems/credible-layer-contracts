@@ -1,19 +1,21 @@
 # syntax=docker/dockerfile:1.2
-FROM ubuntu:24.04 AS base
+FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS base
 ARG VERSION=v1.3.4
+ARG TARGETARCH
 
 # Install dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    wget \
+    curl \
     git \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Download forge and cast to be present
-RUN wget https://github.com/foundry-rs/foundry/releases/download/${VERSION}/foundry_${VERSION}_alpine_amd64.tar.gz && \
-    tar -xvzf foundry_${VERSION}_alpine_amd64.tar.gz -C /usr/local/bin forge cast && \
-    rm foundry_${VERSION}_alpine_amd64.tar.gz
+RUN curl -L https://foundry.paradigm.xyz | bash && \
+    /root/.foundry/bin/foundryup
+
+ENV PATH="$PATH:/root/.foundry/bin"
 
 FROM base AS builder
 WORKDIR /app
