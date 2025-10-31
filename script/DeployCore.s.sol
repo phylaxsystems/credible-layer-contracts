@@ -32,34 +32,13 @@ contract DeployCore is Script {
         vm.startBroadcast();
 
         // Deploy DA Verifier (ECDSA)
-        bytes memory daVerifierCode = abi.encodePacked(type(DAVerifierECDSA).creationCode, abi.encode(daProver));
-        address daVerifier = deployCreate3("credible-layer-da-verifier-ecdsa", daVerifierCode);
-        console2.log("DA Verifier deployed at", daVerifier);
-
+        address daVerifier = deployDAVerifier();
         // Deploy Admin Verifier (Owner)
-        address adminVerifier = deployCreate3(
-            "credible-layer-admin-verifier-owner", abi.encodePacked(type(AdminVerifierOwner).creationCode)
-        );
-        console2.log("Admin Verifier deployed at", adminVerifier);
-
-        IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](1);
-        adminVerifiers[0] = IAdminVerifier(adminVerifier);
-
+        address adminVerifier = deployAdminVerifier();
         // Deploy State Oracle
-        bytes memory stateOracleCode = abi.encodePacked(
-            type(StateOracle).creationCode, abi.encode(assertionTimelockBlocks, daVerifier, maxAssertionsPerAA)
-        );
-        address stateOracle = deployCreate3("credible-layer-state-oracle-implementation", stateOracleCode);
-        console2.log("State Oracle deployed at", stateOracle);
-
+        address stateOracle = deployStateOracle(daVerifier);
         // Deploy State Oracle Proxy
-        bytes memory initCallData = abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers);
-        bytes memory proxyConstructorArgs = abi.encode(address(stateOracle), admin, initCallData);
-        address proxyAddress = deployCreate3(
-            "credible-layer-state-oracle-proxy",
-            abi.encodePacked(type(TransparentUpgradeableProxy).creationCode, proxyConstructorArgs)
-        );
-        console2.log("State Oracle Proxy deployed at", proxyAddress);
+        address stateOracleProxy = deployStateOracleProxy(stateOracle, adminVerifier);
 
         vm.stopBroadcast();
     }
@@ -74,5 +53,41 @@ contract DeployCore is Script {
     // Details: https://github.com/pcaversaccio/createx#permissioned-deploy-protection-and-cross-chain-redeploy-protection
     function generateCreateXSalt(address sender, string memory name) internal pure returns (bytes32) {
         return bytes32(abi.encodePacked(sender, hex"00", bytes11(keccak256(bytes(name)))));
+    }
+
+    function deployDAVerifier() public returns (address) {
+        bytes memory daVerifierCode = abi.encodePacked(type(DAVerifierECDSA).creationCode, abi.encode(daProver));
+        address daVerifier = deployCreate3("credible-layer-da-verifier-ecdsa", daVerifierCode);
+        console2.log("DA Verifier deployed at", daVerifier);
+        return daVerifier;
+    }
+
+    function deployAdminVerifier() public returns (address) {
+        bytes memory adminVerifierCode = abi.encodePacked(type(AdminVerifierOwner).creationCode);
+        address adminVerifier = deployCreate3("credible-layer-admin-verifier-owner", adminVerifierCode);
+        console2.log("Admin Verifier deployed at", adminVerifier);
+        return adminVerifier;
+    }
+
+    function deployStateOracle(address daVerifier) public returns (address) {
+        bytes memory stateOracleCode = abi.encodePacked(
+            type(StateOracle).creationCode, abi.encode(assertionTimelockBlocks, daVerifier, maxAssertionsPerAA)
+        );
+        address stateOracle = deployCreate3("credible-layer-state-oracle-implementation", stateOracleCode);
+        console2.log("State Oracle Implementation deployed at", stateOracle);
+        return stateOracle;
+    }
+
+    function deployStateOracleProxy(address stateOracle, address adminVerifier) public returns (address) {
+        IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](1);
+        adminVerifiers[0] = IAdminVerifier(adminVerifier);
+        bytes memory initCallData = abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers);
+        bytes memory proxyConstructorArgs = abi.encode(address(stateOracle), admin, initCallData);
+        address proxyAddress = deployCreate3(
+            "credible-layer-state-oracle-proxy",
+            abi.encodePacked(type(TransparentUpgradeableProxy).creationCode, proxyConstructorArgs)
+        );
+        console2.log("State Oracle Proxy deployed at", proxyAddress);
+        return proxyAddress;
     }
 }
