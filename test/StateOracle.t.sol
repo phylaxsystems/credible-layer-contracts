@@ -2,9 +2,8 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
-import {DAVerifierECDSA} from "../src/verification/da/DAVerifierECDSA.sol";
 import {StateOracle} from "../src/StateOracle.sol";
-import {Adopter, OwnableAdopter} from "./utils/Adopter.sol";
+import {OwnableAdopter} from "./utils/Adopter.sol";
 import {DAVerifierMock} from "./utils/DAVerifierMock.sol";
 import {ProxyHelper} from "./utils/ProxyHelper.t.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
@@ -521,10 +520,12 @@ contract Batch is StateOracleBase {
         bytes[] memory calls = new bytes[](3);
         calls[0] =
             abi.encodeWithSelector(StateOracle.registerAssertionAdopter.selector, adopter, adminVerifier, new bytes(0));
-        calls[1] =
-            abi.encodeWithSelector(StateOracle.addAssertion.selector, adopter, assertionId1, new bytes(0), new bytes(0));
-        calls[2] =
-            abi.encodeWithSelector(StateOracle.addAssertion.selector, adopter, assertionId2, new bytes(0), new bytes(0));
+        calls[1] = abi.encodeWithSelector(
+            StateOracle.addAssertion.selector, adopter, assertionId1, new bytes(0), new bytes(0)
+        );
+        calls[2] = abi.encodeWithSelector(
+            StateOracle.addAssertion.selector, adopter, assertionId2, new bytes(0), new bytes(0)
+        );
 
         vm.prank(OWNER);
         stateOracle.batch(calls);

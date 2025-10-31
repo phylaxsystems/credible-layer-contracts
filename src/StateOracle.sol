@@ -106,9 +106,15 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @notice Ensures caller is the manager of the contract
     /// @param contractAddress The address of the contract being managed
     modifier onlyManager(address contractAddress) {
+        _onlyManager(contractAddress);
+        _;
+    }
+
+    /// @notice Internal function to ensure caller is the manager of the contract
+    /// @param contractAddress The address of the contract being managed
+    function _onlyManager(address contractAddress) internal view {
         require(assertionAdopters[contractAddress].manager != address(0), AssertionAdopterNotRegistered());
         require(assertionAdopters[contractAddress].manager == msg.sender, UnauthorizedManager());
-        _;
     }
 
     /// @notice Initializes the contract with a timelock period

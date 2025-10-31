@@ -3,6 +3,8 @@ src = "src"
 out = "out"
 libs = ["lib"]
 
+[lint]
+exclude_lints = ["mixed-case-function", "mixed-case-variable"]
 
 
 

@@ -25,11 +25,7 @@ contract DAVerifierECDSA is IDAVerifier {
     /// @dev Uses solady's ECDSA.recoverCalldata to verify signatures
     /// @dev metadata is not used for verification, but is included for compatibility with other DA verifiers
     /// @inheritdoc IDAVerifier
-    function verifyDA(bytes32 assertionId, bytes calldata, bytes calldata proof)
-        external
-        view
-        returns (bool verified)
-    {
+    function verifyDA(bytes32 assertionId, bytes calldata, bytes calldata proof) external view returns (bool verified) {
         return ECDSA.recoverCalldata(assertionId, proof) == DA_PROVER;
     }
 }
