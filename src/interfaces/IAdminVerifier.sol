@@ -2,8 +2,5 @@
 pragma solidity ^0.8.28;
 
 interface IAdminVerifier {
-    function verifyAdmin(address contractAddress, address requester, bytes calldata data)
-        external
-        view
-        returns (bool);
+    function verifyAdmin(address contractAddress, address requester, bytes calldata data) external view returns (bool);
 }
