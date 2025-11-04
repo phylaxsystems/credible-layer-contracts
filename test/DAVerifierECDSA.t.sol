@@ -22,11 +22,10 @@ contract DAVerifierECDSATest is Test {
         assertTrue(verifier.verifyDA(assertionId, metadata, signature), "Signature should be valid");
     }
 
-    function testFuzz_RevertIf_verifyDAWithWrongProver(
-        bytes32 assertionId,
-        bytes calldata metadata,
-        uint256 fakeProver
-    ) public view {
+    function testFuzz_RevertIf_verifyDAWithWrongProver(bytes32 assertionId, bytes calldata metadata, uint256 fakeProver)
+        public
+        view
+    {
         vm.assume(fakeProver != 0 && fakeProver < ECDSA.N);
         vm.assume(fakeProver != daProver);
 
