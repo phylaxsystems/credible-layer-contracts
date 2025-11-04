@@ -6,131 +6,135 @@ import {AdminVerifierWhitelist} from "../src/verification/admin/AdminVerifierWhi
 
 contract AdminVerifierWhitelistTest is Test {
     AdminVerifierWhitelist verifier;
-    address owner = address(0xA11CE);
-    address adopter = address(0xAD0BEEF);
-    address admin = address(0xADD1);
-    address releaser = address(0xBEEF);
+    address constant OWNER = address(uint160(uint256(keccak256(abi.encode("pcl.test.AdminVerifierWhitelist.OWNER")))));
+    address constant ADOPTER =
+        address(uint160(uint256(keccak256(abi.encode("pcl.test.AdminVerifierWhitelist.ADOPTER")))));
+    address constant ADMIN = address(uint160(uint256(keccak256(abi.encode("pcl.test.AdminVerifierWhitelist.ADMIN")))));
+    address constant RELEASER =
+        address(uint160(uint256(keccak256(abi.encode("pcl.test.AdminVerifierWhitelist.RELEASER")))));
+    address constant OTHER_ADMIN =
+        address(uint160(uint256(keccak256(abi.encode("pcl.test.AdminVerifierWhitelist.OTHER_ADMIN")))));
 
     function setUp() public {
-        verifier = new AdminVerifierWhitelist(owner);
+        verifier = new AdminVerifierWhitelist(OWNER);
     }
 
     function test_addToWhitelist() public {
-        vm.prank(owner);
-        verifier.addToWhitelist(adopter, admin);
+        vm.prank(OWNER);
+        verifier.addToWhitelist(ADOPTER, ADMIN);
 
-        assertEq(verifier.whitelist(adopter), admin);
-        assertTrue(verifier.isWhitelisted(adopter, admin));
+        assertEq(verifier.whitelist(ADOPTER), ADMIN);
+        assertTrue(verifier.isWhitelisted(ADOPTER, ADMIN));
     }
 
     function test_RevertIf_addToWhitelistWithZeroAdmin() public {
-        vm.prank(owner);
+        vm.prank(OWNER);
         vm.expectRevert(AdminVerifierWhitelist.InvalidAssertionAdopter.selector);
-        verifier.addToWhitelist(adopter, address(0));
+        verifier.addToWhitelist(ADOPTER, address(0));
     }
 
     function test_RevertIf_addToWhitelistWithZeroAdopter() public {
-        vm.prank(owner);
+        vm.prank(OWNER);
         vm.expectRevert(AdminVerifierWhitelist.InvalidAssertionAdopter.selector);
-        verifier.addToWhitelist(address(0), admin);
+        verifier.addToWhitelist(address(0), ADMIN);
     }
 
     function test_RevertIf_addToWhitelistAlreadyWhitelisted() public {
-        vm.startPrank(owner);
-        verifier.addToWhitelist(adopter, admin);
+        vm.startPrank(OWNER);
+        verifier.addToWhitelist(ADOPTER, ADMIN);
         vm.expectRevert(AdminVerifierWhitelist.AlreadyWhitelisted.selector);
-        verifier.addToWhitelist(adopter, address(0xCAFE));
+        verifier.addToWhitelist(ADOPTER, OTHER_ADMIN);
         vm.stopPrank();
     }
 
     function test_RevertIf_addToWhitelistWhileExcluded() public {
-        vm.startPrank(owner);
-        verifier.exclude(adopter, releaser);
+        vm.startPrank(OWNER);
+        verifier.exclude(ADOPTER, RELEASER);
         vm.expectRevert(AdminVerifierWhitelist.AddressExcluded.selector);
-        verifier.addToWhitelist(adopter, admin);
+        verifier.addToWhitelist(ADOPTER, ADMIN);
         vm.stopPrank();
     }
 
     function test_removeFromWhitelist() public {
-        vm.startPrank(owner);
-        verifier.addToWhitelist(adopter, admin);
-        verifier.removeFromWhitelist(adopter, admin);
+        vm.startPrank(OWNER);
+        verifier.addToWhitelist(ADOPTER, ADMIN);
+        verifier.removeFromWhitelist(ADOPTER, ADMIN);
         vm.stopPrank();
 
-        assertEq(verifier.whitelist(adopter), address(0));
-        assertFalse(verifier.isWhitelisted(adopter, admin));
+        assertEq(verifier.whitelist(ADOPTER), address(0));
+        assertFalse(verifier.isWhitelisted(ADOPTER, ADMIN));
     }
 
     function test_RevertIf_removeFromWhitelistNotWhitelisted() public {
-        vm.prank(owner);
+        vm.prank(OWNER);
         vm.expectRevert(AdminVerifierWhitelist.NotWhitelisted.selector);
-        verifier.removeFromWhitelist(adopter, admin);
+        verifier.removeFromWhitelist(ADOPTER, ADMIN);
     }
 
     function test_excludeRemovesExistingWhitelist() public {
-        vm.startPrank(owner);
-        verifier.addToWhitelist(adopter, admin);
-        verifier.exclude(adopter, releaser);
+        vm.startPrank(OWNER);
+        verifier.addToWhitelist(ADOPTER, ADMIN);
+        verifier.exclude(ADOPTER, RELEASER);
         vm.stopPrank();
 
-        assertEq(verifier.whitelist(adopter), address(0));
-        assertTrue(verifier.isExcluded(adopter));
+        assertEq(verifier.whitelist(ADOPTER), address(0));
+        assertTrue(verifier.isExcluded(ADOPTER));
     }
 
     function test_excludeRemovesWhitelistEntry() public {
-        vm.startPrank(owner);
-        verifier.addToWhitelist(adopter, admin);
-        verifier.exclude(adopter, releaser);
+        vm.startPrank(OWNER);
+        verifier.addToWhitelist(ADOPTER, ADMIN);
+        verifier.exclude(ADOPTER, RELEASER);
         vm.stopPrank();
 
-        assertEq(verifier.whitelist(adopter), address(0));
-        assertFalse(verifier.isWhitelisted(adopter, admin));
-        assertFalse(verifier.verifyAdmin(adopter, admin, ""));
+        assertEq(verifier.whitelist(ADOPTER), address(0));
+        assertFalse(verifier.isWhitelisted(ADOPTER, ADMIN));
+        assertFalse(verifier.verifyAdmin(ADOPTER, ADMIN, ""));
     }
 
     function test_RevertIf_excludeWithInvalidReleaser() public {
-        vm.prank(owner);
+        vm.prank(OWNER);
         vm.expectRevert(AdminVerifierWhitelist.InvalidReleaser.selector);
-        verifier.exclude(adopter, address(0));
+        verifier.exclude(ADOPTER, address(0));
     }
 
     function test_releaseExclusionByReleaser() public {
-        vm.startPrank(owner);
-        verifier.exclude(adopter, releaser);
+        vm.startPrank(OWNER);
+        verifier.exclude(ADOPTER, RELEASER);
         vm.stopPrank();
 
-        vm.prank(releaser);
-        verifier.releaseExclusion(adopter);
+        vm.prank(RELEASER);
+        verifier.releaseExclusion(ADOPTER);
 
-        assertFalse(verifier.isExcluded(adopter));
+        assertFalse(verifier.isExcluded(ADOPTER));
     }
 
     function test_RevertIf_releaseExclusionByNonReleaser(address nonReleaser) public {
-        vm.assume(nonReleaser != releaser && nonReleaser != address(0));
+        vm.assume(nonReleaser != RELEASER && nonReleaser != address(0));
 
-        vm.prank(owner);
-        verifier.exclude(adopter, releaser);
+        vm.prank(OWNER);
+        verifier.exclude(ADOPTER, RELEASER);
 
         vm.prank(nonReleaser);
         vm.expectRevert(AdminVerifierWhitelist.NotExclusionReleaser.selector);
-        verifier.releaseExclusion(adopter);
+        verifier.releaseExclusion(ADOPTER);
     }
 
     function test_RevertIf_releaseExclusionWithoutEntry() public {
         vm.expectRevert(AdminVerifierWhitelist.NoExclusion.selector);
-        verifier.releaseExclusion(adopter);
+        verifier.releaseExclusion(ADOPTER);
     }
 
     function test_verifyAdmin() public {
-        vm.prank(owner);
-        verifier.addToWhitelist(adopter, admin);
+        vm.prank(OWNER);
+        verifier.addToWhitelist(ADOPTER, ADMIN);
 
-        assertTrue(verifier.verifyAdmin(adopter, admin, ""));
-        assertFalse(verifier.verifyAdmin(adopter, address(0xDEAD), ""));
+        assertTrue(verifier.verifyAdmin(ADOPTER, ADMIN, ""));
+        assertFalse(verifier.verifyAdmin(ADOPTER, OTHER_ADMIN, ""));
 
-        vm.prank(owner);
-        verifier.exclude(adopter, releaser);
+        vm.prank(OWNER);
+        verifier.exclude(ADOPTER, RELEASER);
 
-        assertFalse(verifier.verifyAdmin(adopter, admin, ""));
+        assertFalse(verifier.verifyAdmin(ADOPTER, ADMIN, ""));
     }
 }
