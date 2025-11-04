@@ -150,6 +150,8 @@ contract StateOracle is Batch, Ownable, Initializable {
     }
 
     /// @notice Adds a new assertion for an assertion adopter
+    /// @dev An assertion ID can be added only once. If removed (inactive),
+    /// it cannot be re-added - attempting to reuse the same ID will revert.
     /// @param contractAddress The address of the assertion adopter
     /// @param assertionId The unique identifier for the assertion
     /// @param proof The data availability proof for the assertion

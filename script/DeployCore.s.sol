@@ -8,22 +8,30 @@ import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.s
 import {DAVerifierECDSA} from "../src/verification/da/DAVerifierECDSA.sol";
 import {console2} from "forge-std/console2.sol";
 import {Script} from "forge-std/Script.sol";
+import {AdminVerifierWhitelist} from "../src/verification/admin/AdminVerifierWhitelist.sol";
 
 contract DeployCore is Script {
     address admin;
     uint128 assertionTimelockBlocks;
     uint32 maxAssertionsPerAA;
     address daProver;
+    bool deployOwnerVerifier;
+    bool deployWhitelistVerifier;
+    address whitelistAdmin;
 
     function setUp() public {
         maxAssertionsPerAA = uint32(vm.envUint("STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
         assertionTimelockBlocks = uint128(vm.envUint("STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"));
         admin = vm.envAddress("STATE_ORACLE_ADMIN_ADDRESS");
         daProver = vm.envAddress("DA_PROVER_ADDRESS");
+        deployOwnerVerifier = vm.envBool("DEPLOY_ADMIN_VERIFIER_OWNER");
+        deployWhitelistVerifier = vm.envBool("DEPLOY_ADMIN_VERIFIER_WHITELIST");
+        whitelistAdmin = vm.envAddress("ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS");
 
         assert(daProver != address(0));
         assert(assertionTimelockBlocks > 0);
         assert(admin != address(0));
+        assert(deployWhitelistVerifier && whitelistAdmin != address(0) || !deployWhitelistVerifier);
     }
 
     modifier broadcast() {
@@ -36,27 +44,35 @@ contract DeployCore is Script {
         // Deploy DA Verifier (ECDSA)
         address daVerifier = _deployDAVerifier();
         // Deploy Admin Verifier (Owner)
-        address adminVerifier = _deployAdminVerifier();
+        address[] memory adminVerifierDeployments = _deployAdminVerifiers();
         // Deploy State Oracle
         address stateOracle = _deployStateOracle(daVerifier);
         // Deploy State Oracle Proxy
-        _deployStateOracleProxy(stateOracle, adminVerifier);
+        _deployStateOracleProxy(stateOracle, adminVerifierDeployments);
     }
 
     function deployDAVerifier() public broadcast {
         _deployDAVerifier();
     }
 
-    function deployAdminVerifier() public broadcast {
-        _deployAdminVerifier();
+    function deployAdminVerifiers() public broadcast {
+        _deployAdminVerifiers();
     }
 
     function deployStateOracle(address daVerifier) public broadcast {
         _deployStateOracle(daVerifier);
     }
 
-    function deployStateOracleProxy(address stateOracle, address adminVerifier) public broadcast {
-        _deployStateOracleProxy(stateOracle, adminVerifier);
+    function deployStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments) public broadcast {
+        _deployStateOracleProxy(stateOracle, adminVerifierDeployments);
+    }
+
+    function deployOwnerAdminVerifier() public broadcast {
+        _deployOwnerAdminVerifier();
+    }
+
+    function deployWhitelistAdminVerifier() public broadcast {
+        _deployWhitelistAdminVerifier();
     }
 
     function _deployDAVerifier() internal virtual returns (address) {
@@ -65,10 +81,18 @@ contract DeployCore is Script {
         return daVerifier;
     }
 
-    function _deployAdminVerifier() internal virtual returns (address) {
-        address adminVerifier = address(new AdminVerifierOwner());
-        console2.log("Admin Verifier deployed at", adminVerifier);
-        return adminVerifier;
+    function _deployAdminVerifiers() internal virtual returns (address[] memory deployments) {
+        uint256 count;
+        if (deployOwnerVerifier) count++;
+        if (deployWhitelistVerifier) count++;
+        deployments = new address[](count);
+        uint256 index;
+        if (deployOwnerVerifier) {
+            deployments[index++] = _deployOwnerAdminVerifier();
+        }
+        if (deployWhitelistVerifier) {
+            deployments[index] = _deployWhitelistAdminVerifier();
+        }
     }
 
     function _deployStateOracle(address daVerifier) public virtual returns (address) {
@@ -77,12 +101,30 @@ contract DeployCore is Script {
         return stateOracle;
     }
 
-    function _deployStateOracleProxy(address stateOracle, address adminVerifier) public virtual returns (address) {
-        IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](1);
-        adminVerifiers[0] = IAdminVerifier(adminVerifier);
+    function _deployStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments)
+        public
+        virtual
+        returns (address)
+    {
+        IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](adminVerifierDeployments.length);
+        for (uint256 i = 0; i < adminVerifierDeployments.length; i++) {
+            adminVerifiers[i] = IAdminVerifier(adminVerifierDeployments[i]);
+        }
         bytes memory initCallData = abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers);
         address proxyAddress = address(new TransparentUpgradeableProxy(address(stateOracle), admin, initCallData));
         console2.log("State Oracle Proxy deployed at", proxyAddress);
         return proxyAddress;
+    }
+
+    function _deployOwnerAdminVerifier() internal virtual returns (address verifier) {
+        verifier = address(new AdminVerifierOwner());
+        console2.log("Admin Verifier (Owner) deployed at", verifier);
+        return verifier;
+    }
+
+    function _deployWhitelistAdminVerifier() internal virtual returns (address verifier) {
+        verifier = address(new AdminVerifierWhitelist(whitelistAdmin));
+        console2.log("Admin Verifier (Whitelist) deployed at", verifier);
+        return verifier;
     }
 }
