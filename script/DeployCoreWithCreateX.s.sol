@@ -10,6 +10,8 @@ import {DAVerifierECDSA} from "../src/verification/da/DAVerifierECDSA.sol";
 import {ICreateX, CREATE_X_ADDRESS} from "./ICreateX.sol";
 import {DeployCore} from "./DeployCore.s.sol";
 import {console2} from "forge-std/console2.sol";
+import {Script} from "forge-std/Script.sol";
+import {CREATE3} from "solady/utils/CREATE3.sol";
 
 contract DeployCoreWithCreateX is DeployCore {
     string public constant SALT_DA_VERIFIER_NAME = "credible-layer-da-verifier-ecdsa";
