@@ -8,10 +8,8 @@ import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.s
 import {DAVerifierECDSA} from "../src/verification/da/DAVerifierECDSA.sol";
 import {console2} from "forge-std/console2.sol";
 import {Script} from "forge-std/Script.sol";
-import {ICreateX, CREATE_X_ADDRESS} from "./ICreateX.sol";
 
 contract DeployCore is Script {
-    ICreateX internal constant CREATE_X = ICreateX(CREATE_X_ADDRESS);
     address admin;
     uint128 assertionTimelockBlocks;
     uint32 maxAssertionsPerAA;
@@ -28,65 +26,62 @@ contract DeployCore is Script {
         assert(admin != address(0));
     }
 
-    function run() public {
+    modifier broadcast() {
         vm.startBroadcast();
-
-        // Deploy DA Verifier (ECDSA)
-        address daVerifier = deployDAVerifier();
-        // Deploy Admin Verifier (Owner)
-        address adminVerifier = deployAdminVerifier();
-        // Deploy State Oracle
-        address stateOracle = deployStateOracle(daVerifier);
-        // Deploy State Oracle Proxy
-        address stateOracleProxy = deployStateOracleProxy(stateOracle, adminVerifier);
-
+        _;
         vm.stopBroadcast();
     }
 
-    function deployCreate3(string memory name, bytes memory initCode) internal returns (address) {
-        bytes32 salt = generateCreateXSalt(msg.sender, name);
-        return CREATE_X.deployCreate3(salt, initCode);
+    function run() public broadcast {
+        // Deploy DA Verifier (ECDSA)
+        address daVerifier = _deployDAVerifier();
+        // Deploy Admin Verifier (Owner)
+        address adminVerifier = _deployAdminVerifier();
+        // Deploy State Oracle
+        address stateOracle = _deployStateOracle(daVerifier);
+        // Deploy State Oracle Proxy
+        _deployStateOracleProxy(stateOracle, adminVerifier);
     }
 
-    // Set salt with frontrunning protection, i.e. first 20 bytes = deployer;
-    // 0 byte to switch off cross-chain redeploy protection; 11 bytes salt
-    // Details: https://github.com/pcaversaccio/createx#permissioned-deploy-protection-and-cross-chain-redeploy-protection
-    function generateCreateXSalt(address sender, string memory name) internal pure returns (bytes32) {
-        return bytes32(abi.encodePacked(sender, hex"00", bytes11(keccak256(bytes(name)))));
+    function deployDAVerifier() public broadcast {
+        _deployDAVerifier();
     }
 
-    function deployDAVerifier() public returns (address) {
-        bytes memory daVerifierCode = abi.encodePacked(type(DAVerifierECDSA).creationCode, abi.encode(daProver));
-        address daVerifier = deployCreate3("credible-layer-da-verifier-ecdsa", daVerifierCode);
+    function deployAdminVerifier() public broadcast {
+        _deployAdminVerifier();
+    }
+
+    function deployStateOracle(address daVerifier) public broadcast {
+        _deployStateOracle(daVerifier);
+    }
+
+    function deployStateOracleProxy(address stateOracle, address adminVerifier) public broadcast {
+        _deployStateOracleProxy(stateOracle, adminVerifier);
+    }
+
+    function _deployDAVerifier() internal virtual returns (address) {
+        address daVerifier = address(new DAVerifierECDSA(daProver));
         console2.log("DA Verifier deployed at", daVerifier);
         return daVerifier;
     }
 
-    function deployAdminVerifier() public returns (address) {
-        bytes memory adminVerifierCode = abi.encodePacked(type(AdminVerifierOwner).creationCode);
-        address adminVerifier = deployCreate3("credible-layer-admin-verifier-owner", adminVerifierCode);
+    function _deployAdminVerifier() internal virtual returns (address) {
+        address adminVerifier = address(new AdminVerifierOwner());
         console2.log("Admin Verifier deployed at", adminVerifier);
         return adminVerifier;
     }
 
-    function deployStateOracle(address daVerifier) public returns (address) {
-        bytes memory stateOracleCode = abi.encodePacked(
-            type(StateOracle).creationCode, abi.encode(assertionTimelockBlocks, daVerifier, maxAssertionsPerAA)
-        );
-        address stateOracle = deployCreate3("credible-layer-state-oracle-implementation", stateOracleCode);
+    function _deployStateOracle(address daVerifier) public virtual returns (address) {
+        address stateOracle = address(new StateOracle(assertionTimelockBlocks, daVerifier, maxAssertionsPerAA));
         console2.log("State Oracle Implementation deployed at", stateOracle);
         return stateOracle;
     }
 
-    function deployStateOracleProxy(address stateOracle, address adminVerifier) public returns (address) {
+    function _deployStateOracleProxy(address stateOracle, address adminVerifier) public virtual returns (address) {
         IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](1);
         adminVerifiers[0] = IAdminVerifier(adminVerifier);
         bytes memory initCallData = abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers);
-        bytes memory proxyConstructorArgs = abi.encode(address(stateOracle), admin, initCallData);
-        address proxyAddress = deployCreate3(
-            "credible-layer-state-oracle-proxy",
-            abi.encodePacked(type(TransparentUpgradeableProxy).creationCode, proxyConstructorArgs)
-        );
+        address proxyAddress = address(new TransparentUpgradeableProxy(address(stateOracle), admin, initCallData));
         console2.log("State Oracle Proxy deployed at", proxyAddress);
         return proxyAddress;
     }
