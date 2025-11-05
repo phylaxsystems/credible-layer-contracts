@@ -63,6 +63,16 @@ For example, the `DAVerifierECDSA` requires a signature over the assertion id fr
 `DA_PROVER_ADDRESS`. When storing the assertion at the [Assertion DA](https://github.com/phylaxsystems/assertion-da),
 the user will receive the signature in return.
 
+### State Oracle Administration
+
+The State Oracle owner retains privileged controls as a safety net for protocol operations:
+
+- **Add or remove admin verifiers:** Adjust which verification modules are authorized to verify ownership of new assertion adopters.
+- **Register or revoke managers:** Directly assign, revoke, or reset managers for assertion adopters when necessary.
+- **Remove assertions:** Forcefully deactivate assertions if malicious or unwanted logic is introduced, or if a project requests emergency removal.
+
+These controls are intended strictly for emergency response scenarios—such as attacks or lost manager keys—and should be exercised with operational safeguards to avoid disrupting legitimate protocol activity.
+
 ### Deployment
 
 The deployment scripts (`script/DeployCore.s.sol` and `script/DeployCoreWithCreateX.s.sol`) provision the core protocol with the `DAVerifierECDSA` implementation. Any assertion onboarding performed against the resulting `StateOracle` will require a signature from `DA_PROVER_ADDRESS`.
