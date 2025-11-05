@@ -42,4 +42,3 @@ jobs:
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
     with:
       artifact_name: credible-layer-contracts-artifacts
-      artifacts_path: artifacts/
