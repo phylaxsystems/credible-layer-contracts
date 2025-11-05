@@ -51,7 +51,7 @@ contract StateOracle is Batch, Ownable, Initializable {
     struct AssertionAdopter {
         address manager;
         address pendingManager;
-        uint32 assertionCount;
+        uint16 assertionCount;
         mapping(bytes32 assertionId => AssertionWindow assertionWindow) assertions;
     }
 
@@ -94,9 +94,6 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @param deactivationBlock The block number when the assertion is going to be inactive
     event AssertionRemoved(address assertionAdopter, bytes32 assertionId, uint256 deactivationBlock);
 
-    /// @notice Maximum number of assertions per assertion adopter
-    uint128 public maxAssertionsPerAA;
-
     /// @notice Maps contract addresses to their assertion adopter data
     mapping(address => AssertionAdopter) public assertionAdopters;
 
@@ -109,6 +106,9 @@ contract StateOracle is Batch, Ownable, Initializable {
         _onlyManager(contractAddress);
         _;
     }
+
+    /// @notice Maximum number of assertions per assertion adopter
+    uint16 public maxAssertionsPerAA;
 
     /// @notice Internal function to ensure caller is the manager of the contract
     /// @param contractAddress The address of the contract being managed
@@ -130,7 +130,7 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @param admin The address of the admin
     /// @param _adminVerifiers The admin verifiers to add
     /// @param _maxAssertionsPerAA Maximum number of assertions per assertion adopter
-    function initialize(address admin, IAdminVerifier[] calldata _adminVerifiers, uint128 _maxAssertionsPerAA)
+    function initialize(address admin, IAdminVerifier[] calldata _adminVerifiers, uint16 _maxAssertionsPerAA)
         external
         initializer
     {
@@ -300,11 +300,11 @@ contract StateOracle is Batch, Ownable, Initializable {
 
     /// @notice Sets the maximum number of assertions per assertion adopter
     /// @param _maxAssertionsPerAA The maximum number of assertions per assertion adopter
-    function setMaxAssertionsPerAA(uint128 _maxAssertionsPerAA) external onlyOwner {
+    function setMaxAssertionsPerAA(uint16 _maxAssertionsPerAA) external onlyOwner {
         _setMaxAssertionsPerAA(_maxAssertionsPerAA);
     }
 
-    function _setMaxAssertionsPerAA(uint128 _maxAssertionsPerAA) internal {
+    function _setMaxAssertionsPerAA(uint16 _maxAssertionsPerAA) internal {
         maxAssertionsPerAA = _maxAssertionsPerAA;
     }
 }

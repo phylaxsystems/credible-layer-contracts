@@ -13,14 +13,14 @@ import {AdminVerifierWhitelist} from "../src/verification/admin/AdminVerifierWhi
 contract DeployCore is Script {
     address admin;
     uint128 assertionTimelockBlocks;
-    uint128 maxAssertionsPerAA;
+    uint16 maxAssertionsPerAA;
     address daProver;
     bool deployOwnerVerifier;
     bool deployWhitelistVerifier;
     address whitelistAdmin;
 
     function setUp() public {
-        maxAssertionsPerAA = uint32(vm.envUint("STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
+        maxAssertionsPerAA = uint16(vm.envUint("STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
         assertionTimelockBlocks = uint128(vm.envUint("STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"));
         admin = vm.envAddress("STATE_ORACLE_ADMIN_ADDRESS");
         daProver = vm.envAddress("DA_PROVER_ADDRESS");

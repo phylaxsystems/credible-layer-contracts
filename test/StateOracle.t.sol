@@ -16,7 +16,7 @@ contract StateOracleBase is Test, ProxyHelper {
     address constant OWNER = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.OWNER")))));
     address constant DEPLOYER = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.DEPLOYER")))));
     uint128 constant TIMEOUT = 1000;
-    uint128 constant MAX_ASSERTIONS_PER_AA = 5;
+    uint16 constant MAX_ASSERTIONS_PER_AA = 5;
     StateOracle stateOracle;
     IAdminVerifier adminVerifier;
 
@@ -550,16 +550,16 @@ contract Batch is StateOracleBase {
 }
 
 contract SetMaxAssertionsPerAA is StateOracleBase {
-    function test_setMaxAssertionsPerAA(uint128 maxAssertionsPerAA) public {
+    function test_setMaxAssertionsPerAA(uint16 maxAssertionsPerAA) public {
         vm.prank(ADMIN);
         stateOracle.setMaxAssertionsPerAA(maxAssertionsPerAA);
         assertEq(stateOracle.maxAssertionsPerAA(), maxAssertionsPerAA, "Max assertions per AA should have been set");
     }
 
-    function testFuzz_RevertIf_setMaxAssertionsPerAAByUnauthorized(
-        uint128 maxAssertionsPerAA,
-        address unauthorizedAdmin
-    ) public noAdmin(unauthorizedAdmin) {
+    function testFuzz_RevertIf_setMaxAssertionsPerAAByUnauthorized(uint16 maxAssertionsPerAA, address unauthorizedAdmin)
+        public
+        noAdmin(unauthorizedAdmin)
+    {
         vm.assume(unauthorizedAdmin != stateOracle.owner());
         vm.prank(unauthorizedAdmin);
         vm.expectRevert(Ownable.Unauthorized.selector);
@@ -568,7 +568,7 @@ contract SetMaxAssertionsPerAA is StateOracleBase {
 
     function test_AddAssertionsThenLowerMaxAndRevertOnAdd() public {
         // Set initial maxAssertionsPerAA to a high value
-        uint128 initialMax = 2;
+        uint16 initialMax = 2;
         vm.prank(ADMIN);
         stateOracle.setMaxAssertionsPerAA(initialMax);
         assertEq(stateOracle.maxAssertionsPerAA(), initialMax, "Max assertions per AA should have been set");
@@ -580,7 +580,7 @@ contract SetMaxAssertionsPerAA is StateOracleBase {
         addAssertionAndAssert(manager, adopter, assertionId2);
 
         // Lower maxAssertionsPerAA below N
-        uint128 lowerMax = uint128(initialMax - 1);
+        uint16 lowerMax = uint16(initialMax - 1);
         vm.prank(ADMIN);
         stateOracle.setMaxAssertionsPerAA(lowerMax);
         assertEq(stateOracle.maxAssertionsPerAA(), lowerMax, "Max assertions per AA should be lowered");
