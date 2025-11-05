@@ -35,6 +35,13 @@ Protocol admins attach assertions to their protocol by adding entries in the sta
 Network operators and/or block builders operate the assertion executor who adhere to the entries of
 the contracts and enforce the validation of assertions.
 
+#### State Oracle Behavior
+
+- Each assertion adopter maintains a manager and a set of assertion windows.
+- An assertion ID can be registered only once. If removed (inactive), it cannot be re-added—attempting to reuse the same ID will revert.
+- Activation and deactivation blocks are enforced via the configured timelock.
+- External admin verifiers (owner-based, whitelist) govern who may register new adopters.
+
 ### Protocol Admin Verification
 
 The Protocol Admin Verification interface allows for methods to verify who the rightful admin
@@ -56,6 +63,42 @@ For example, the `DAVerifierECDSA` requires a signature over the assertion id fr
 `DA_PROVER_ADDRESS`. When storing the assertion at the [Assertion DA](https://github.com/phylaxsystems/assertion-da),
 the user will receive the signature in return.
 
+### Deployment
+
+The deployment scripts (`script/DeployCore.s.sol` and `script/DeployCoreWithCreateX.s.sol`) provision the core protocol with the `DAVerifierECDSA` implementation. Any assertion onboarding performed against the resulting `StateOracle` will require a signature from `DA_PROVER_ADDRESS`.
+
+### Environment Variables
+
+Set the following environment variables before running the deployment scripts:
+
+- `STATE_ORACLE_MAX_ASSERTIONS_PER_AA`
+- `STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS`
+- `STATE_ORACLE_ADMIN_ADDRESS`
+- `DA_PROVER_ADDRESS`
+- `DEPLOY_ADMIN_VERIFIER_OWNER` (true/false)
+- `DEPLOY_ADMIN_VERIFIER_WHITELIST` (true/false)
+- `ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS` (required when whitelist verifier is enabled)
+
+### Deployment Overview
+
+Running `DeployCore` or `DeployCoreWithCreateX` will:
+
+1. Deploy the DA verifier (ECDSA) and log its address.
+2. Deploy `AdminVerifierOwner` if `STATE_ORACLE_ADMIN_VERIFIER_OWNER=true` and log its address.
+3. Deploy `AdminVerifierWhitelist` if `STATE_ORACLE_ADMIN_VERIFIER_WHITELIST=true` (using `ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS` as constructor owner) and log its address.
+4. Deploy the `StateOracle` implementation and log its address.
+5. Deploy the proxy, initialize it with the configured admin verifiers, and log the proxy address.
+
+Console output will include labeled addresses for each deployed contract, e.g.:
+
+```
+DA Verifier deployed at <address>
+Admin Verifier (Owner) deployed at <address>
+Admin Verifier (Whitelist) deployed at <address>
+State Oracle Implementation deployed at <address>
+State Oracle Proxy deployed at <address>
+```
+
 ## Installation
 
 1. Clone the repository:
@@ -71,40 +114,9 @@ cd credible-layer-contracts
 forge install
 ```
 
-## Deployment
-
-The current deployment script [scripts/DeployCore.s.sol](./scripts/DeployCore.s.sol) deploys the
-core contracts with a DAVerifierECDSA implementation. This means adding assertions require the
-signature of the `DA_PROVER_ADDRESS`.
-
-1. Set up environment variables in `.env`:
-
-```bash
-# Required for deployment
-DA_PROVER_ADDRESS="0x..."                       # Address of the DA prover
-STATE_ORACLE_MAX_ASSERTIONS_PER_AA="100"        # Maximum number of assertions per Assertion Adopter
-STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS="100"    # Delay in number of blocks until the assertion becomes enforced/will not be enforced anymore
-STATE_ORACLE_PROXY_ADMIN_ADDRESS="0x..."        # Required if DEPLOY_PROXY is true
-```
-
-2. Deploy the contracts:
-
-```bash
-# Deploy to testnet
-forge script script/DeployCore.s.sol --broadcast # Add flags for rpc url and wallet options
-
-```
-
-The deployment script will:
-
-1. Deploy the `DAVerifierECDSA` contract with the specified prover address
-2. Deploy the `AdminVerifierOwner` contract
-3. Deploy the `StateOracle` contract implementation with the configured timelock and max assertions
-4. Deploy a `TransparentUpgradableProxy` and initialize it with the necessary values
-
 ### CreateX
 
-The forge script uses the CreateX contract factory for maintaining and controlling contract addresses
+The forge script `script/DeployCoreWithCreateX` uses the CreateX contract factory for maintaining and controlling contract addresses
 of the protocol.
 The deployment address of CreateX is `0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed`.
 If CreateX is not deployed on your chain, you will find a helper script to deploy CreateX at
@@ -126,25 +138,35 @@ For more information about CreateX see https://github.com/pcaversaccio/createx.
 
 To deploy the protocol on an anvil instance run
 
-```sh
+````sh
 anvil
 cast rpc anvil_setBalance "0x8d63e0FE87CA36E06a076584fCA651A684D4c97d" "0xDE0B6B3A7640000" --rpc-url http://localhost:8545
+
 FUNDER_PRIVATE_KEY="0xac431098061ca49f5b36121d01a17d30e1d0624227d08b583ff328f1efe0d4a2" \
+
 RPC_URL="http://localhost:8545" \
 ./shell/deploy_create_x.sh
 
-forge script script/DeployCore.s.sol --private-key 0xac431098061ca49f5b36121d01a17d30e1d0624227d08b583ff328f1efe0d4a2 --rpc-url http://localhost:8545 --broadcast
+STATE_ORACLE_MAX_ASSERTIONS_PER_AA=5 \
+STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS=10 \
+STATE_ORACLE_ADMIN_ADDRESS=0xD2EfB83dd46094775188d927323b2523EaE3d087 \
+DA_PROVER_ADDRESS=0x670cFA8781BF365Aefb6c048CDc522B857946C71 \
+DEPLOY_ADMIN_VERIFIER_OWNER=true \
+DEPLOY_ADMIN_VERIFIER_WHITELIST=true \
+ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS=0xD2EfB83dd46094775188d927323b2523EaE3d087 \
+forge script script/DeployCoreWithCreateX.s.sol --rpc-url http://localhost:8545 --private-key 0xac431098061ca49f5b36121d01a17d30e1d0624227d08b583ff328f1efe0d4a2 --broadcast
 ```
 
 The contracts will be deployed at
 
 ```txt
 == Logs ==
-  DA Verifier:          0xE5b59c5AF181D522be5e721D83F8b0F69592A6b0
-  Admin Verifier:       0x3e06372d794a48552203069915eA91b223297736
-  State Oracle:         0x080f6B740F9CAC60BA17Adab3d763997EEdce1e7
-  State Oracle Proxy:   0x6dD3f12ce435f69DCeDA7e31605C02Bb5422597b
-```
+  DA Verifier deployed at 0xE5b59c5AF181D522be5e721D83F8b0F69592A6b0
+  Admin Verifier (Owner) deployed at 0x3e06372d794a48552203069915eA91b223297736
+  Admin Verifier (Whitelist) deployed at 0xcaaC06Fc3826D47950aD28fA58bA8D986BBae0A4
+  State Oracle Implementation deployed at 0x080f6B740F9CAC60BA17Adab3d763997EEdce1e7
+  State Oracle Proxy deployed at 0x6dD3f12ce435f69DCeDA7e31605C02Bb5422597b
+````
 
 In this example the contracts are deployed by
 
