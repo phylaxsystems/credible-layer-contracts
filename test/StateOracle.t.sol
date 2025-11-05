@@ -16,7 +16,7 @@ contract StateOracleBase is Test, ProxyHelper {
     address constant OWNER = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.OWNER")))));
     address constant DEPLOYER = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.DEPLOYER")))));
     uint128 constant TIMEOUT = 1000;
-    uint32 constant MAX_ASSERTIONS_PER_AA = 5;
+    uint128 constant MAX_ASSERTIONS_PER_AA = 5;
     StateOracle stateOracle;
     IAdminVerifier adminVerifier;
 
@@ -30,12 +30,13 @@ contract StateOracleBase is Test, ProxyHelper {
 
     function setUp() public virtual {
         DAVerifierMock daVerifier = new DAVerifierMock();
-        StateOracle implementation = new StateOracle(TIMEOUT, address(daVerifier), MAX_ASSERTIONS_PER_AA);
+        StateOracle implementation = new StateOracle(TIMEOUT, address(daVerifier));
         adminVerifier = IAdminVerifier(new AdminVerifierOwner());
         IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
         verifiers[0] = adminVerifier;
 
-        bytes memory data = abi.encodeWithSelector(StateOracle.initialize.selector, ADMIN, verifiers);
+        bytes memory data =
+            abi.encodeWithSelector(StateOracle.initialize.selector, ADMIN, verifiers, MAX_ASSERTIONS_PER_AA);
         stateOracle = StateOracle(deployProxy(address(implementation), data));
     }
 
@@ -71,24 +72,24 @@ contract Constructor is StateOracleBase {
     function test_assertionTimelockZero() public {
         DAVerifierMock daVerifier = new DAVerifierMock();
         vm.expectRevert(StateOracle.InvalidAssertionTimelock.selector);
-        new StateOracle(0, address(daVerifier), MAX_ASSERTIONS_PER_AA);
+        stateOracle = new StateOracle(0, address(daVerifier));
     }
 }
 
 contract Initialize is StateOracleBase {
     function test_RevertIf_alreadyInitialized() public {
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        stateOracle.initialize(OWNER, new IAdminVerifier[](0));
+        stateOracle.initialize(OWNER, new IAdminVerifier[](0), MAX_ASSERTIONS_PER_AA);
     }
 
     function test_initializeNonProxy() public {
         DAVerifierMock daVerifier = new DAVerifierMock();
-        stateOracle = new StateOracle(TIMEOUT, address(daVerifier), MAX_ASSERTIONS_PER_AA);
+        stateOracle = new StateOracle(TIMEOUT, address(daVerifier));
         assertEq(stateOracle.owner(), address(0), "Owner should be address(0)");
         adminVerifier = IAdminVerifier(new AdminVerifierOwner());
         IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
         verifiers[0] = adminVerifier;
-        stateOracle.initialize(ADMIN, verifiers);
+        stateOracle.initialize(ADMIN, verifiers, MAX_ASSERTIONS_PER_AA);
         assertEq(stateOracle.owner(), ADMIN, "Owner should be ADMIN");
         assertEq(stateOracle.adminVerifiers(adminVerifier), true, "Admin verifier should be added");
     }
@@ -545,5 +546,49 @@ contract Batch is StateOracleBase {
 
         assertTrue(deactivationBlock1 != 0, "Assertion 1 should have been removed");
         assertTrue(deactivationBlock2 != 0, "Assertion 2 should have been removed");
+    }
+}
+
+contract SetMaxAssertionsPerAA is StateOracleBase {
+    function test_setMaxAssertionsPerAA(uint128 maxAssertionsPerAA) public {
+        vm.prank(ADMIN);
+        stateOracle.setMaxAssertionsPerAA(maxAssertionsPerAA);
+        assertEq(stateOracle.maxAssertionsPerAA(), maxAssertionsPerAA, "Max assertions per AA should have been set");
+    }
+
+    function testFuzz_RevertIf_setMaxAssertionsPerAAByUnauthorized(
+        uint128 maxAssertionsPerAA,
+        address unauthorizedAdmin
+    ) public noAdmin(unauthorizedAdmin) {
+        vm.assume(unauthorizedAdmin != stateOracle.owner());
+        vm.prank(unauthorizedAdmin);
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        stateOracle.setMaxAssertionsPerAA(maxAssertionsPerAA);
+    }
+
+    function test_AddAssertionsThenLowerMaxAndRevertOnAdd() public {
+        // Set initial maxAssertionsPerAA to a high value
+        uint128 initialMax = 2;
+        vm.prank(ADMIN);
+        stateOracle.setMaxAssertionsPerAA(initialMax);
+        assertEq(stateOracle.maxAssertionsPerAA(), initialMax, "Max assertions per AA should have been set");
+
+        (address adopter, address manager) = registerAssertionAdopter();
+        bytes32 assertionId1 = keccak256("assertion1");
+        bytes32 assertionId2 = keccak256("assertion2");
+        addAssertionAndAssert(manager, adopter, assertionId1);
+        addAssertionAndAssert(manager, adopter, assertionId2);
+
+        // Lower maxAssertionsPerAA below N
+        uint128 lowerMax = uint128(initialMax - 1);
+        vm.prank(ADMIN);
+        stateOracle.setMaxAssertionsPerAA(lowerMax);
+        assertEq(stateOracle.maxAssertionsPerAA(), lowerMax, "Max assertions per AA should be lowered");
+
+        // Attempt to add another assertion and expect revert
+        bytes32 newAssertionId = keccak256("newAssertion");
+        vm.prank(OWNER);
+        vm.expectRevert(StateOracle.TooManyAssertions.selector);
+        stateOracle.addAssertion(adopter, newAssertionId, new bytes(0), new bytes(0));
     }
 }

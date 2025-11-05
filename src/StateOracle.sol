@@ -19,9 +19,6 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @notice Number of blocks to wait before an assertion becomes active or inactive
     uint128 public immutable ASSERTION_TIMELOCK_BLOCKS;
 
-    /// @notice Maximum number of assertions per assertion adopter
-    uint128 public immutable MAX_ASSERTIONS_PER_AA;
-
     /// @notice The DA verifier
     IDAVerifier public immutable DA_VERIFIER;
 
@@ -97,6 +94,9 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @param deactivationBlock The block number when the assertion is going to be inactive
     event AssertionRemoved(address assertionAdopter, bytes32 assertionId, uint256 deactivationBlock);
 
+    /// @notice Maximum number of assertions per assertion adopter
+    uint128 public maxAssertionsPerAA;
+
     /// @notice Maps contract addresses to their assertion adopter data
     mapping(address => AssertionAdopter) public assertionAdopters;
 
@@ -120,19 +120,25 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @notice Initializes the contract with a timelock period
     /// @param assertionTimelockBlocks Number of blocks to wait before assertions become active/inactive
     /// @param daVerifier The address of the DA verifier
-    /// @param maxAssertionsPerAA Maximum number of assertions per assertion adopter
-    constructor(uint128 assertionTimelockBlocks, address daVerifier, uint32 maxAssertionsPerAA) {
+    constructor(uint128 assertionTimelockBlocks, address daVerifier) {
         require(assertionTimelockBlocks > 0, InvalidAssertionTimelock());
         ASSERTION_TIMELOCK_BLOCKS = assertionTimelockBlocks;
         DA_VERIFIER = IDAVerifier(daVerifier);
-        MAX_ASSERTIONS_PER_AA = maxAssertionsPerAA;
     }
 
-    function initialize(address admin, IAdminVerifier[] calldata _adminVerifiers) external initializer {
+    /// @notice Initializes the contract
+    /// @param admin The address of the admin
+    /// @param _adminVerifiers The admin verifiers to add
+    /// @param _maxAssertionsPerAA Maximum number of assertions per assertion adopter
+    function initialize(address admin, IAdminVerifier[] calldata _adminVerifiers, uint128 _maxAssertionsPerAA)
+        external
+        initializer
+    {
         _initializeOwner(admin);
         for (uint256 i = 0; i < _adminVerifiers.length; i++) {
             _addAdminVerifier(_adminVerifiers[i]);
         }
+        _setMaxAssertionsPerAA(_maxAssertionsPerAA);
     }
 
     /// @notice Registers a new assertion adopter
@@ -162,7 +168,7 @@ contract StateOracle is Batch, Ownable, Initializable {
     {
         require(!hasAssertion(contractAddress, assertionId), AssertionAlreadyExists());
         require(DA_VERIFIER.verifyDA(assertionId, metadata, proof), InvalidProof());
-        require(assertionAdopters[contractAddress].assertionCount < MAX_ASSERTIONS_PER_AA, TooManyAssertions());
+        require(assertionAdopters[contractAddress].assertionCount < maxAssertionsPerAA, TooManyAssertions());
 
         assertionAdopters[contractAddress].assertions[assertionId].activationBlock =
             uint128(block.number) + ASSERTION_TIMELOCK_BLOCKS;
@@ -290,5 +296,15 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @return isRegistered True if the admin verifier is registered, false otherwise
     function isAdminVerifierRegistered(IAdminVerifier adminVerifier) public view returns (bool isRegistered) {
         return adminVerifiers.isRegistered(adminVerifier);
+    }
+
+    /// @notice Sets the maximum number of assertions per assertion adopter
+    /// @param _maxAssertionsPerAA The maximum number of assertions per assertion adopter
+    function setMaxAssertionsPerAA(uint128 _maxAssertionsPerAA) external onlyOwner {
+        _setMaxAssertionsPerAA(_maxAssertionsPerAA);
+    }
+
+    function _setMaxAssertionsPerAA(uint128 _maxAssertionsPerAA) internal {
+        maxAssertionsPerAA = _maxAssertionsPerAA;
     }
 }
