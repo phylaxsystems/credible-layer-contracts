@@ -1,7 +1,7 @@
 {
   "name": "@phylax-systems/credible-layer-contracts",
   "description": "Smart contracts for the Credible Layer protocol",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "license": "",
   "author": {
     "name": "Phylax Systems",
