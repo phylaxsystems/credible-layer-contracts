@@ -46,9 +46,7 @@ contract DeployCoreWithCreateX is DeployCore {
     function _deployStateOracle(address daVerifier) public override returns (address) {
         address stateOracle = deployCreate3(
             SALT_STATE_ORACLE_NAME,
-            abi.encodePacked(
-                type(StateOracle).creationCode, abi.encode(assertionTimelockBlocks, daVerifier, maxAssertionsPerAA)
-            )
+            abi.encodePacked(type(StateOracle).creationCode, abi.encode(assertionTimelockBlocks, daVerifier))
         );
         console2.log("State Oracle Implementation deployed at", stateOracle);
         return stateOracle;
@@ -64,7 +62,8 @@ contract DeployCoreWithCreateX is DeployCore {
         for (uint256 i = 0; i < adminVerifierDeployments.length; i++) {
             adminVerifiers[i] = IAdminVerifier(adminVerifierDeployments[i]);
         }
-        bytes memory initCallData = abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers);
+        bytes memory initCallData =
+            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, maxAssertionsPerAA);
         address proxyAddress = deployCreate3(
             SALT_STATE_ORACLE_PROXY_NAME,
             abi.encodePacked(
