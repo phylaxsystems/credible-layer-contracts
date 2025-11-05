@@ -13,7 +13,7 @@ import {AdminVerifierWhitelist} from "../src/verification/admin/AdminVerifierWhi
 contract DeployCore is Script {
     address admin;
     uint128 assertionTimelockBlocks;
-    uint32 maxAssertionsPerAA;
+    uint128 maxAssertionsPerAA;
     address daProver;
     bool deployOwnerVerifier;
     bool deployWhitelistVerifier;
@@ -96,7 +96,7 @@ contract DeployCore is Script {
     }
 
     function _deployStateOracle(address daVerifier) public virtual returns (address) {
-        address stateOracle = address(new StateOracle(assertionTimelockBlocks, daVerifier, maxAssertionsPerAA));
+        address stateOracle = address(new StateOracle(assertionTimelockBlocks, daVerifier));
         console2.log("State Oracle Implementation deployed at", stateOracle);
         return stateOracle;
     }
@@ -110,7 +110,8 @@ contract DeployCore is Script {
         for (uint256 i = 0; i < adminVerifierDeployments.length; i++) {
             adminVerifiers[i] = IAdminVerifier(adminVerifierDeployments[i]);
         }
-        bytes memory initCallData = abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers);
+        bytes memory initCallData =
+            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, maxAssertionsPerAA);
         address proxyAddress = address(new TransparentUpgradeableProxy(address(stateOracle), admin, initCallData));
         console2.log("State Oracle Proxy deployed at", proxyAddress);
         return proxyAddress;
