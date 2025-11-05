@@ -20,9 +20,7 @@ contract StateOracleWithDAVerifierECDSATest is StateOracleBase {
         IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
         verifiers[0] = adminVerifier;
         bytes memory data = abi.encodeWithSelector(StateOracle.initialize.selector, ADMIN, verifiers);
-        stateOracle = StateOracle(
-            deployProxy(address(new StateOracle(TIMEOUT, address(daVerifier), MAX_ASSERTIONS_PER_AA)), data)
-        );
+        stateOracle = StateOracle(deployProxy(address(new StateOracle(TIMEOUT, address(daVerifier))), data));
         vm.startPrank(OWNER);
         adopter = address(new OwnableAdopter(OWNER));
         stateOracle.registerAssertionAdopter(adopter, adminVerifier, new bytes(0));

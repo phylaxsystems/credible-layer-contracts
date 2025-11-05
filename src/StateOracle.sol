@@ -19,9 +19,6 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @notice Number of blocks to wait before an assertion becomes active or inactive
     uint128 public immutable ASSERTION_TIMELOCK_BLOCKS;
 
-    /// @notice Maximum number of assertions per assertion adopter
-    uint128 public immutable MAX_ASSERTIONS_PER_AA;
-
     /// @notice The DA verifier
     IDAVerifier public immutable DA_VERIFIER;
 
@@ -54,7 +51,7 @@ contract StateOracle is Batch, Ownable, Initializable {
     struct AssertionAdopter {
         address manager;
         address pendingManager;
-        uint32 assertionCount;
+        uint16 assertionCount;
         mapping(bytes32 assertionId => AssertionWindow assertionWindow) assertions;
     }
 
@@ -110,6 +107,9 @@ contract StateOracle is Batch, Ownable, Initializable {
         _;
     }
 
+    /// @notice Maximum number of assertions per assertion adopter
+    uint16 public maxAssertionsPerAA;
+
     /// @notice Internal function to ensure caller is the manager of the contract
     /// @param contractAddress The address of the contract being managed
     function _onlyManager(address contractAddress) internal view {
@@ -120,19 +120,25 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @notice Initializes the contract with a timelock period
     /// @param assertionTimelockBlocks Number of blocks to wait before assertions become active/inactive
     /// @param daVerifier The address of the DA verifier
-    /// @param maxAssertionsPerAA Maximum number of assertions per assertion adopter
-    constructor(uint128 assertionTimelockBlocks, address daVerifier, uint32 maxAssertionsPerAA) {
+    constructor(uint128 assertionTimelockBlocks, address daVerifier) {
         require(assertionTimelockBlocks > 0, InvalidAssertionTimelock());
         ASSERTION_TIMELOCK_BLOCKS = assertionTimelockBlocks;
         DA_VERIFIER = IDAVerifier(daVerifier);
-        MAX_ASSERTIONS_PER_AA = maxAssertionsPerAA;
     }
 
-    function initialize(address admin, IAdminVerifier[] calldata _adminVerifiers) external initializer {
+    /// @notice Initializes the contract
+    /// @param admin The address of the admin
+    /// @param _adminVerifiers The admin verifiers to add
+    /// @param _maxAssertionsPerAA Maximum number of assertions per assertion adopter
+    function initialize(address admin, IAdminVerifier[] calldata _adminVerifiers, uint16 _maxAssertionsPerAA)
+        external
+        initializer
+    {
         _initializeOwner(admin);
         for (uint256 i = 0; i < _adminVerifiers.length; i++) {
             _addAdminVerifier(_adminVerifiers[i]);
         }
+        _setMaxAssertionsPerAA(_maxAssertionsPerAA);
     }
 
     /// @notice Registers a new assertion adopter
@@ -162,7 +168,7 @@ contract StateOracle is Batch, Ownable, Initializable {
     {
         require(!hasAssertion(contractAddress, assertionId), AssertionAlreadyExists());
         require(DA_VERIFIER.verifyDA(assertionId, metadata, proof), InvalidProof());
-        require(assertionAdopters[contractAddress].assertionCount < MAX_ASSERTIONS_PER_AA, TooManyAssertions());
+        require(assertionAdopters[contractAddress].assertionCount < maxAssertionsPerAA, TooManyAssertions());
 
         assertionAdopters[contractAddress].assertions[assertionId].activationBlock =
             uint128(block.number) + ASSERTION_TIMELOCK_BLOCKS;
@@ -290,5 +296,15 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @return isRegistered True if the admin verifier is registered, false otherwise
     function isAdminVerifierRegistered(IAdminVerifier adminVerifier) public view returns (bool isRegistered) {
         return adminVerifiers.isRegistered(adminVerifier);
+    }
+
+    /// @notice Sets the maximum number of assertions per assertion adopter
+    /// @param _maxAssertionsPerAA The maximum number of assertions per assertion adopter
+    function setMaxAssertionsPerAA(uint16 _maxAssertionsPerAA) external onlyOwner {
+        _setMaxAssertionsPerAA(_maxAssertionsPerAA);
+    }
+
+    function _setMaxAssertionsPerAA(uint16 _maxAssertionsPerAA) internal {
+        maxAssertionsPerAA = _maxAssertionsPerAA;
     }
 }
