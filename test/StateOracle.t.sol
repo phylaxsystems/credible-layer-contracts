@@ -6,7 +6,7 @@ import {StateOracle} from "../src/StateOracle.sol";
 import {OwnableAdopter} from "./utils/Adopter.sol";
 import {DAVerifierMock} from "./utils/DAVerifierMock.sol";
 import {ProxyHelper} from "./utils/ProxyHelper.t.sol";
-import {Ownable} from "solady/auth/Ownable.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Initializable} from "solady/utils/Initializable.sol";
 import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
 import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.sol";
@@ -73,6 +73,31 @@ contract Constructor is StateOracleBase {
         DAVerifierMock daVerifier = new DAVerifierMock();
         vm.expectRevert(StateOracle.InvalidAssertionTimelock.selector);
         stateOracle = new StateOracle(0, address(daVerifier));
+    }
+}
+
+contract OwnableTest is StateOracleBase {
+    function test_ownerIsZeroOnImplementation() public {
+        DAVerifierMock daVerifier = new DAVerifierMock();
+        StateOracle implementation = new StateOracle(TIMEOUT, address(daVerifier));
+        assertEq(implementation.owner(), address(0), "implementation owner should be zero");
+    }
+
+    function test_ownerIsInitializerOnProxy() public {
+        assertEq(stateOracle.owner(), ADMIN, "proxy owner should match initializer");
+    }
+
+    function test_transferOwnership() public {
+        address newOwner = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.NEW_OWNER")))));
+
+        vm.prank(ADMIN);
+        stateOracle.transferOwnership(newOwner);
+        assertEq(stateOracle.owner(), ADMIN, "ownership transfer should be pending");
+
+        vm.prank(newOwner);
+        stateOracle.acceptOwnership();
+
+        assertEq(stateOracle.owner(), newOwner, "ownership transfer should be completed");
     }
 }
 
@@ -252,7 +277,7 @@ contract RemoveAssertion is StateOracleBase {
         addAssertionAndAssert(manager, adopter, assertionId);
 
         vm.prank(unauthorizedAdmin);
-        vm.expectRevert(Ownable.Unauthorized.selector);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedAdmin));
         stateOracle.removeAssertionByOwner(adopter, assertionId);
     }
 
@@ -435,7 +460,7 @@ contract RevokeManager is TransferManagementBase {
         vm.assume(unauthorizedManager != stateOracle.owner());
         (address adopter,) = registerAssertionAdopter();
         vm.prank(unauthorizedManager);
-        vm.expectRevert(Ownable.Unauthorized.selector);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedManager));
         stateOracle.revokeManager(adopter);
     }
 
@@ -464,7 +489,7 @@ contract AddAdminVerifier is StateOracleBase {
         vm.assume(unauthorizedAdmin != stateOracle.owner());
         IAdminVerifier _adminVerifier = IAdminVerifier(new AdminVerifierOwner());
         vm.prank(unauthorizedAdmin);
-        vm.expectRevert(Ownable.Unauthorized.selector);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedAdmin));
         stateOracle.addAdminVerifier(_adminVerifier);
     }
 
@@ -499,7 +524,7 @@ contract RemoveAdminVerifier is StateOracleBase {
         stateOracle.addAdminVerifier(_adminVerifier);
         assertEq(stateOracle.adminVerifiers(_adminVerifier), true, "Admin verifier should have been added");
         vm.prank(unauthorizedAdmin);
-        vm.expectRevert(Ownable.Unauthorized.selector);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedAdmin));
         stateOracle.removeAdminVerifier(_adminVerifier);
     }
 
@@ -561,7 +586,7 @@ contract SetMaxAssertionsPerAA is StateOracleBase {
     {
         vm.assume(unauthorizedAdmin != stateOracle.owner());
         vm.prank(unauthorizedAdmin);
-        vm.expectRevert(Ownable.Unauthorized.selector);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedAdmin));
         stateOracle.setMaxAssertionsPerAA(maxAssertionsPerAA);
     }
 
