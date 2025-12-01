@@ -113,8 +113,9 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @notice Internal function to ensure caller is the manager of the contract
     /// @param contractAddress The address of the contract being managed
     function _onlyManager(address contractAddress) internal view {
-        require(assertionAdopters[contractAddress].manager != address(0), AssertionAdopterNotRegistered());
-        require(assertionAdopters[contractAddress].manager == msg.sender, UnauthorizedManager());
+        address manager = assertionAdopters[contractAddress].manager;
+        require(manager != address(0), AssertionAdopterNotRegistered());
+        require(manager == msg.sender, UnauthorizedManager());
     }
 
     /// @notice Initializes the contract with a timelock period
@@ -252,8 +253,9 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @notice Accepts a manager transfer request
     /// @param contractAddress The address of the assertion adopter
     function acceptManagerTransfer(address contractAddress) external {
-        require(assertionAdopters[contractAddress].pendingManager != address(0), NoPendingManager());
-        require(assertionAdopters[contractAddress].pendingManager == msg.sender, UnauthorizedManager());
+        address pendingManager = assertionAdopters[contractAddress].pendingManager;
+        require(pendingManager != address(0), NoPendingManager());
+        require(pendingManager == msg.sender, UnauthorizedManager());
         _transferManager(contractAddress, msg.sender);
     }
 
