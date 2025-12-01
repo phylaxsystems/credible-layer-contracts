@@ -4,7 +4,8 @@ pragma solidity ^0.8.28;
 import {IDAVerifier} from "./interfaces/IDAVerifier.sol";
 import {IAdminVerifier} from "./interfaces/IAdminVerifier.sol";
 import {Batch} from "./Batch.sol";
-import {Ownable} from "solady/auth/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Initializable} from "solady/utils/Initializable.sol";
 import {AdminVerifierRegistry} from "./lib/AdminVerifierRegistry.sol";
 
@@ -13,7 +14,7 @@ import {AdminVerifierRegistry} from "./lib/AdminVerifierRegistry.sol";
 /// @notice Manages assertion adopters and their assertions
 /// @dev Provides functionality to register assertion adopters and manage their assertions
 
-contract StateOracle is Batch, Ownable, Initializable {
+contract StateOracle is Batch, Initializable, Ownable2Step {
     using AdminVerifierRegistry for mapping(IAdminVerifier adminVerifier => bool isRegistered);
 
     /// @notice Number of blocks to wait before an assertion becomes active or inactive
@@ -121,10 +122,11 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @notice Initializes the contract with a timelock period
     /// @param assertionTimelockBlocks Number of blocks to wait before assertions become active/inactive
     /// @param daVerifier The address of the DA verifier
-    constructor(uint128 assertionTimelockBlocks, address daVerifier) {
+    constructor(uint128 assertionTimelockBlocks, address daVerifier) Ownable(msg.sender) {
         require(assertionTimelockBlocks > 0, InvalidAssertionTimelock());
         ASSERTION_TIMELOCK_BLOCKS = assertionTimelockBlocks;
         DA_VERIFIER = IDAVerifier(daVerifier);
+        renounceOwnership();
         _disableInitializers();
     }
 
@@ -136,7 +138,7 @@ contract StateOracle is Batch, Ownable, Initializable {
         external
         initializer
     {
-        _initializeOwner(admin);
+        _transferOwnership(admin);
         for (uint256 i = 0; i < _adminVerifiers.length; i++) {
             _addAdminVerifier(_adminVerifiers[i]);
         }
