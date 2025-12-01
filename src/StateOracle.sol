@@ -125,6 +125,7 @@ contract StateOracle is Batch, Ownable, Initializable {
         require(assertionTimelockBlocks > 0, InvalidAssertionTimelock());
         ASSERTION_TIMELOCK_BLOCKS = assertionTimelockBlocks;
         DA_VERIFIER = IDAVerifier(daVerifier);
+        _disableInitializers();
     }
 
     /// @notice Initializes the contract

@@ -82,16 +82,15 @@ contract Initialize is StateOracleBase {
         stateOracle.initialize(OWNER, new IAdminVerifier[](0), MAX_ASSERTIONS_PER_AA);
     }
 
-    function test_initializeNonProxy() public {
+    function test_RevertIf_initializeNonProxy() public {
         DAVerifierMock daVerifier = new DAVerifierMock();
         stateOracle = new StateOracle(TIMEOUT, address(daVerifier));
         assertEq(stateOracle.owner(), address(0), "Owner should be address(0)");
         adminVerifier = IAdminVerifier(new AdminVerifierOwner());
         IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
         verifiers[0] = adminVerifier;
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
         stateOracle.initialize(ADMIN, verifiers, MAX_ASSERTIONS_PER_AA);
-        assertEq(stateOracle.owner(), ADMIN, "Owner should be ADMIN");
-        assertEq(stateOracle.adminVerifiers(adminVerifier), true, "Admin verifier should be added");
     }
 }
 
