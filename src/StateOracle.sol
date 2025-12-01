@@ -100,15 +100,15 @@ contract StateOracle is Batch, Ownable, Initializable {
     /// @notice The admin verification registry
     mapping(IAdminVerifier adminVerifier => bool isRegistered) public adminVerifiers;
 
+    /// @notice Maximum number of assertions per assertion adopter
+    uint16 public maxAssertionsPerAA;
+
     /// @notice Ensures caller is the manager of the contract
     /// @param contractAddress The address of the contract being managed
     modifier onlyManager(address contractAddress) {
         _onlyManager(contractAddress);
         _;
     }
-
-    /// @notice Maximum number of assertions per assertion adopter
-    uint16 public maxAssertionsPerAA;
 
     /// @notice Internal function to ensure caller is the manager of the contract
     /// @param contractAddress The address of the contract being managed

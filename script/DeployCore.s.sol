@@ -9,6 +9,7 @@ import {DAVerifierECDSA} from "../src/verification/da/DAVerifierECDSA.sol";
 import {console2} from "forge-std/console2.sol";
 import {Script} from "forge-std/Script.sol";
 import {AdminVerifierWhitelist} from "../src/verification/admin/AdminVerifierWhitelist.sol";
+import {AdminVerifierSuperAdmin} from "../src/verification/admin/AdminVerifierSuperAdmin.sol";
 
 contract DeployCore is Script {
     address admin;
@@ -17,21 +18,26 @@ contract DeployCore is Script {
     address daProver;
     bool deployOwnerVerifier;
     bool deployWhitelistVerifier;
+    bool deploySuperAdminVerifier;
     address whitelistAdmin;
+    address superAdmin;
 
     function setUp() public {
         maxAssertionsPerAA = uint16(vm.envUint("STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
         assertionTimelockBlocks = uint128(vm.envUint("STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"));
         admin = vm.envAddress("STATE_ORACLE_ADMIN_ADDRESS");
         daProver = vm.envAddress("DA_PROVER_ADDRESS");
-        deployOwnerVerifier = vm.envBool("DEPLOY_ADMIN_VERIFIER_OWNER");
-        deployWhitelistVerifier = vm.envBool("DEPLOY_ADMIN_VERIFIER_WHITELIST");
-        whitelistAdmin = vm.envAddress("ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS");
+        deployOwnerVerifier = vm.envOr("DEPLOY_ADMIN_VERIFIER_OWNER", false);
+        deployWhitelistVerifier = vm.envOr("DEPLOY_ADMIN_VERIFIER_WHITELIST", false);
+        whitelistAdmin = vm.envOr("ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS", address(0));
+        deploySuperAdminVerifier = vm.envOr("DEPLOY_ADMIN_VERIFIER_SUPER_ADMIN", false);
+        superAdmin = vm.envOr("ADMIN_VERIFIER_SUPER_ADMIN_ADDRESS", address(0));
 
         assert(daProver != address(0));
         assert(assertionTimelockBlocks > 0);
         assert(admin != address(0));
         assert(deployWhitelistVerifier && whitelistAdmin != address(0) || !deployWhitelistVerifier);
+        assert(deploySuperAdminVerifier && superAdmin != address(0) || !deploySuperAdminVerifier);
     }
 
     modifier broadcast() {
@@ -73,6 +79,10 @@ contract DeployCore is Script {
 
     function deployWhitelistAdminVerifier() public broadcast {
         _deployWhitelistAdminVerifier();
+    }
+
+    function deploySuperAdminAdminVerifier() public broadcast {
+        _deploySuperAdminAdminVerifier();
     }
 
     function _deployDAVerifier() internal virtual returns (address) {
@@ -126,6 +136,12 @@ contract DeployCore is Script {
     function _deployWhitelistAdminVerifier() internal virtual returns (address verifier) {
         verifier = address(new AdminVerifierWhitelist(whitelistAdmin));
         console2.log("Admin Verifier (Whitelist) deployed at", verifier);
+        return verifier;
+    }
+
+    function _deploySuperAdminAdminVerifier() internal virtual returns (address verifier) {
+        verifier = address(new AdminVerifierSuperAdmin(superAdmin));
+        console2.log("Admin Verifier (Super Admin) deployed at", verifier);
         return verifier;
     }
 }
