@@ -83,7 +83,7 @@ contract OwnableTest is StateOracleBase {
         assertEq(implementation.owner(), address(0), "implementation owner should be zero");
     }
 
-    function test_ownerIsInitializerOnProxy() public {
+    function test_ownerIsInitializerOnProxy() public view {
         assertEq(stateOracle.owner(), ADMIN, "proxy owner should match initializer");
     }
 
@@ -247,6 +247,21 @@ contract RemoveAssertion is StateOracleBase {
             uint128(block.number) + stateOracle.ASSERTION_TIMELOCK_BLOCKS(),
             "Deactivation block mismatch"
         );
+    }
+
+    function testFuzz_RevertIf_removeAssertionAlreadyRemoved(bytes32 assertionId) public {
+        (address adopter, address manager) = registerAssertionAdopter();
+        addAssertionAndAssert(manager, adopter, assertionId);
+        vm.roll(block.number + 1);
+        uint16 registeredAssertions = stateOracle.getAssertionCount(adopter);
+        vm.startPrank(manager);
+        stateOracle.removeAssertion(adopter, assertionId);
+        assertEq(stateOracle.getAssertionCount(adopter), registeredAssertions - 1, "Assertion count should decrease");
+        vm.expectRevert(StateOracle.AssertionAlreadyRemoved.selector);
+        stateOracle.removeAssertion(adopter, assertionId);
+        vm.stopPrank();
+
+        assertEq(stateOracle.getAssertionCount(adopter), registeredAssertions - 1, "Assertion count should not change");
     }
 
     function testFuzz_removeAssertionByAdmin(bytes32 assertionId) public {
