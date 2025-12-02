@@ -45,6 +45,8 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
     error InvalidAssertionTimelock();
     /// @notice Thrown when attempting to add more assertions than the maximum allowed
     error TooManyAssertions();
+    /// @notice Thrown when attempting to remove or modify an already removed assertion
+    error AssertionAlreadyRemoved();
 
     /// @notice Struct containing assertion adopter data
     /// @param manager Address authorized to manage assertions
@@ -199,6 +201,9 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
     /// @param assertionId The unique identifier of the assertion to remove
     function _removeAssertion(address contractAddress, bytes32 assertionId) internal {
         require(hasAssertion(contractAddress, assertionId), AssertionDoesNotExist());
+        require(
+            assertionAdopters[contractAddress].assertions[assertionId].deactivationBlock == 0, AssertionAlreadyRemoved()
+        );
         assertionAdopters[contractAddress].assertions[assertionId].deactivationBlock =
             uint128(block.number) + ASSERTION_TIMELOCK_BLOCKS;
         assertionAdopters[contractAddress].assertionCount--;
@@ -228,6 +233,13 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
             assertionAdopters[contractAddress].assertions[assertionId].activationBlock,
             assertionAdopters[contractAddress].assertions[assertionId].deactivationBlock
         );
+    }
+
+    /// @notice Gets the assertion count for a given assertion adopter
+    /// @param contractAddress The address of the assertion adopter
+    /// @return assertionCount The number of assertions associated with the adopter
+    function getAssertionCount(address contractAddress) public view returns (uint16 assertionCount) {
+        return assertionAdopters[contractAddress].assertionCount;
     }
 
     /// @notice Gets the manager address for a given assertion adopter
