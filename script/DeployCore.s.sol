@@ -40,15 +40,16 @@ contract DeployCore is Script {
         vm.stopBroadcast();
     }
 
-    function run() public broadcast {
+    function run() public virtual broadcast returns (address proxy1, address proxy2) {
         // Deploy DA Verifier (ECDSA)
         address daVerifier = _deployDAVerifier();
         // Deploy Admin Verifier (Owner)
         address[] memory adminVerifierDeployments = _deployAdminVerifiers();
         // Deploy State Oracle
         address stateOracle = _deployStateOracle(daVerifier);
-        // Deploy State Oracle Proxy
-        _deployStateOracleProxy(stateOracle, adminVerifierDeployments);
+        // Deploy 2 State Oracle Proxy contracts
+        proxy1 = _deployStateOracleProxy(stateOracle, adminVerifierDeployments);
+        proxy2 = _deployStateOracleProxy(stateOracle, adminVerifierDeployments);
     }
 
     function deployDAVerifier() public broadcast {

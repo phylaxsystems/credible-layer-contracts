@@ -16,7 +16,8 @@ contract DeployCoreWithCreateX is DeployCore {
     string public constant SALT_ADMIN_VERIFIER_OWNER_NAME = "credible-layer-admin-verifier-owner";
     string public constant SALT_ADMIN_VERIFIER_WHITELIST_NAME = "credible-layer-admin-verifier-whitelist";
     string public constant SALT_STATE_ORACLE_NAME = "credible-layer-state-oracle-implementation";
-    string public constant SALT_STATE_ORACLE_PROXY_NAME = "credible-layer-state-oracle-proxy";
+    string public constant SALT_STATE_ORACLE_PROXY_STAGING_NAME = "credible-layer-state-oracle-proxy-staging";
+    string public constant SALT_STATE_ORACLE_PROXY_PRODUCTION_NAME = "credible-layer-state-oracle-proxy-production";
 
     ICreateX internal constant CREATE_X = ICreateX(CREATE_X_ADDRESS);
 
@@ -52,10 +53,8 @@ contract DeployCoreWithCreateX is DeployCore {
         return stateOracle;
     }
 
-    function _deployStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments)
-        public
-        virtual
-        override
+    function _deployStagingStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments)
+        internal
         returns (address)
     {
         IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](adminVerifierDeployments.length);
@@ -65,12 +64,32 @@ contract DeployCoreWithCreateX is DeployCore {
         bytes memory initCallData =
             abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, maxAssertionsPerAA);
         address proxyAddress = deployCreate3(
-            SALT_STATE_ORACLE_PROXY_NAME,
+            SALT_STATE_ORACLE_PROXY_STAGING_NAME,
             abi.encodePacked(
                 type(TransparentUpgradeableProxy).creationCode, abi.encode(address(stateOracle), admin, initCallData)
             )
         );
-        console2.log("State Oracle Proxy deployed at", proxyAddress);
+        console2.log("State Oracle Proxy (Staging) deployed at", proxyAddress);
+        return proxyAddress;
+    }
+
+    function _deployProductionStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments)
+        internal
+        returns (address)
+    {
+        IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](adminVerifierDeployments.length);
+        for (uint256 i = 0; i < adminVerifierDeployments.length; i++) {
+            adminVerifiers[i] = IAdminVerifier(adminVerifierDeployments[i]);
+        }
+        bytes memory initCallData =
+            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, maxAssertionsPerAA);
+        address proxyAddress = deployCreate3(
+            SALT_STATE_ORACLE_PROXY_PRODUCTION_NAME,
+            abi.encodePacked(
+                type(TransparentUpgradeableProxy).creationCode, abi.encode(address(stateOracle), admin, initCallData)
+            )
+        );
+        console2.log("State Oracle Proxy (Production) deployed at", proxyAddress);
         return proxyAddress;
     }
 
@@ -84,5 +103,18 @@ contract DeployCoreWithCreateX is DeployCore {
     // Details: https://github.com/pcaversaccio/createx#permissioned-deploy-protection-and-cross-chain-redeploy-protection
     function generateCreateXSalt(address sender, string memory name) internal pure returns (bytes32) {
         return bytes32(abi.encodePacked(sender, hex"00", bytes11(keccak256(bytes(name)))));
+    }
+
+    function run() public override broadcast returns (address stagingProxy, address productionProxy) {
+        // Deploy DA Verifier (ECDSA)
+        address daVerifier = _deployDAVerifier();
+        // Deploy Admin Verifiers
+        address[] memory adminVerifierDeployments = _deployAdminVerifiers();
+        // Deploy State Oracle Implementation
+        address stateOracle = _deployStateOracle(daVerifier);
+        // Deploy Staging State Oracle Proxy
+        stagingProxy = _deployStagingStateOracleProxy(stateOracle, adminVerifierDeployments);
+        // Deploy Production State Oracle Proxy
+        productionProxy = _deployProductionStateOracleProxy(stateOracle, adminVerifierDeployments);
     }
 }
