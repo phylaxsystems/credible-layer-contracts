@@ -38,6 +38,10 @@ contract StateOracleBase is Test, ProxyHelper {
         bytes memory data =
             abi.encodeWithSelector(StateOracle.initialize.selector, ADMIN, verifiers, MAX_ASSERTIONS_PER_AA);
         stateOracle = StateOracle(deployProxy(address(implementation), data));
+
+        // Disable whitelist for existing tests
+        vm.prank(ADMIN);
+        stateOracle.disableWhitelist();
     }
 
     function registerAssertionAdopter() internal returns (address, address) {
@@ -629,5 +633,342 @@ contract SetMaxAssertionsPerAA is StateOracleBase {
         vm.prank(OWNER);
         vm.expectRevert(StateOracle.TooManyAssertions.selector);
         stateOracle.addAssertion(adopter, newAssertionId, new bytes(0), new bytes(0));
+    }
+}
+
+contract WhitelistBase is StateOracleBase {
+    address constant USER1 = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.USER1")))));
+    address constant USER2 = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.USER2")))));
+
+    function setUp() public virtual override {
+        super.setUp();
+        // Re-enable whitelist for whitelist tests
+        vm.prank(ADMIN);
+        stateOracle.enableWhitelist();
+    }
+}
+
+contract InitializeWhitelist is WhitelistBase {
+    function test_initialWhitelistState() public view {
+        assertTrue(stateOracle.whitelistEnabled(), "whitelist should be enabled");
+    }
+
+    function test_initialNonWhitelistedUser() public view {
+        assertFalse(stateOracle.whitelist(USER1), "user1 should not be whitelisted");
+        assertFalse(stateOracle.isWhitelisted(USER1), "user1 should not pass isWhitelisted check");
+    }
+}
+
+contract AddToWhitelist is WhitelistBase {
+    function test_addToWhitelist() public {
+        assertFalse(stateOracle.isWhitelisted(USER1), "user should not be whitelisted initially");
+
+        vm.expectEmit(true, false, false, false, address(stateOracle));
+        emit StateOracle.AddedToWhitelist(USER1);
+
+        vm.prank(ADMIN);
+        stateOracle.addToWhitelist(USER1);
+
+        assertTrue(stateOracle.whitelist(USER1), "user should be whitelisted");
+        assertTrue(stateOracle.isWhitelisted(USER1), "user should pass isWhitelisted check");
+    }
+
+    function testFuzz_RevertIf_addToWhitelistByUnauthorized(address unauthorizedCaller)
+        public
+        noAdmin(unauthorizedCaller)
+    {
+        vm.assume(unauthorizedCaller != ADMIN);
+
+        vm.prank(unauthorizedCaller);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedCaller));
+        stateOracle.addToWhitelist(USER1);
+    }
+
+    function test_RevertIf_addAlreadyWhitelistedAccount() public {
+        vm.startPrank(ADMIN);
+        stateOracle.addToWhitelist(USER1);
+
+        vm.expectRevert(abi.encodeWithSelector(StateOracle.AlreadyWhitelisted.selector, USER1));
+        stateOracle.addToWhitelist(USER1);
+        vm.stopPrank();
+    }
+}
+
+contract RemoveFromWhitelist is WhitelistBase {
+    function test_removeFromWhitelist() public {
+        vm.startPrank(ADMIN);
+        stateOracle.addToWhitelist(USER1);
+        assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted");
+
+        vm.expectEmit(true, false, false, false, address(stateOracle));
+        emit StateOracle.RemovedFromWhitelist(USER1);
+
+        stateOracle.removeFromWhitelist(USER1);
+        vm.stopPrank();
+
+        assertFalse(stateOracle.whitelist(USER1), "user should not be whitelisted");
+        assertFalse(stateOracle.isWhitelisted(USER1), "user should not pass isWhitelisted check");
+    }
+
+    function testFuzz_RevertIf_removeFromWhitelistByUnauthorized(address unauthorizedCaller)
+        public
+        noAdmin(unauthorizedCaller)
+    {
+        vm.assume(unauthorizedCaller != ADMIN);
+
+        vm.prank(ADMIN);
+        stateOracle.addToWhitelist(USER1);
+
+        vm.prank(unauthorizedCaller);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedCaller));
+        stateOracle.removeFromWhitelist(USER1);
+    }
+
+    function test_RevertIf_removeNonWhitelistedAccount() public {
+        vm.prank(ADMIN);
+        vm.expectRevert(abi.encodeWithSelector(StateOracle.AccountNotWhitelisted.selector, USER1));
+        stateOracle.removeFromWhitelist(USER1);
+    }
+}
+
+contract EnableWhitelist is StateOracleBase {
+    function test_enableWhitelist() public {
+        assertFalse(stateOracle.whitelistEnabled(), "whitelist should be disabled initially");
+
+        vm.expectEmit(false, false, false, false, address(stateOracle));
+        emit StateOracle.WhitelistEnabled();
+
+        vm.prank(ADMIN);
+        stateOracle.enableWhitelist();
+
+        assertTrue(stateOracle.whitelistEnabled(), "whitelist should be enabled");
+    }
+
+    function testFuzz_RevertIf_enableWhitelistByUnauthorized(address unauthorizedCaller)
+        public
+        noAdmin(unauthorizedCaller)
+    {
+        vm.assume(unauthorizedCaller != ADMIN);
+
+        vm.prank(unauthorizedCaller);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedCaller));
+        stateOracle.enableWhitelist();
+    }
+
+    function test_RevertIf_enableAlreadyEnabledWhitelist() public {
+        vm.startPrank(ADMIN);
+        stateOracle.enableWhitelist();
+
+        vm.expectRevert(StateOracle.WhitelistAlreadyEnabled.selector);
+        stateOracle.enableWhitelist();
+        vm.stopPrank();
+    }
+}
+
+contract DisableWhitelist is WhitelistBase {
+    function test_disableWhitelist() public {
+        assertTrue(stateOracle.whitelistEnabled(), "whitelist should be enabled initially");
+
+        vm.expectEmit(false, false, false, false, address(stateOracle));
+        emit StateOracle.WhitelistDisabled();
+
+        vm.prank(ADMIN);
+        stateOracle.disableWhitelist();
+
+        assertFalse(stateOracle.whitelistEnabled(), "whitelist should be disabled");
+    }
+
+    function testFuzz_RevertIf_disableWhitelistByUnauthorized(address unauthorizedCaller)
+        public
+        noAdmin(unauthorizedCaller)
+    {
+        vm.assume(unauthorizedCaller != ADMIN);
+
+        vm.prank(unauthorizedCaller);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedCaller));
+        stateOracle.disableWhitelist();
+    }
+
+    function test_RevertIf_disableAlreadyDisabledWhitelist() public {
+        vm.startPrank(ADMIN);
+        stateOracle.disableWhitelist();
+
+        vm.expectRevert(StateOracle.WhitelistAlreadyDisabled.selector);
+        stateOracle.disableWhitelist();
+        vm.stopPrank();
+    }
+
+    function test_whitelistedUserWhenDisabled() public {
+        vm.startPrank(ADMIN);
+        stateOracle.addToWhitelist(USER1);
+        assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted");
+
+        stateOracle.disableWhitelist();
+        vm.stopPrank();
+
+        assertTrue(
+            stateOracle.isWhitelisted(USER1), "isWhitelisted should return true when disabled (everyone allowed)"
+        );
+        assertTrue(stateOracle.whitelist(USER1), "user should still be in whitelist mapping");
+    }
+
+    function test_nonWhitelistedUserWhenDisabled() public {
+        vm.prank(ADMIN);
+        stateOracle.disableWhitelist();
+
+        assertTrue(
+            stateOracle.isWhitelisted(USER1), "isWhitelisted should return true when disabled (everyone allowed)"
+        );
+        assertFalse(stateOracle.whitelist(USER1), "user should not be in whitelist mapping");
+    }
+
+    function test_whitelistedUserAfterReenabling() public {
+        vm.startPrank(ADMIN);
+        stateOracle.addToWhitelist(USER1);
+        assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted");
+
+        stateOracle.disableWhitelist();
+        assertTrue(
+            stateOracle.isWhitelisted(USER1), "isWhitelisted should return true when disabled (everyone allowed)"
+        );
+
+        stateOracle.enableWhitelist();
+        vm.stopPrank();
+
+        assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted after re-enabling");
+    }
+}
+
+contract RegisterAssertionAdopterWithWhitelist is WhitelistBase {
+    function test_registerByWhitelistedUser() public {
+        vm.prank(ADMIN);
+        stateOracle.addToWhitelist(USER1);
+
+        vm.startPrank(USER1);
+        OwnableAdopter adopter = new OwnableAdopter(USER1);
+        stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
+        vm.stopPrank();
+
+        assertEq(stateOracle.getManager(address(adopter)), USER1, "Manager should be USER1");
+    }
+
+    function testFuzz_RevertIf_registerByNonWhitelistedUser(address nonWhitelistedUser)
+        public
+        noAdmin(nonWhitelistedUser)
+    {
+        vm.assume(nonWhitelistedUser != ADMIN);
+        vm.assume(nonWhitelistedUser != address(0));
+
+        vm.startPrank(nonWhitelistedUser);
+        OwnableAdopter adopter = new OwnableAdopter(nonWhitelistedUser);
+        vm.expectRevert(StateOracle.NotWhitelisted.selector);
+        stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
+        vm.stopPrank();
+    }
+
+    function test_registerByNonWhitelistedUserWhenDisabled() public {
+        vm.prank(ADMIN);
+        stateOracle.disableWhitelist();
+
+        vm.startPrank(USER1);
+        OwnableAdopter adopter = new OwnableAdopter(USER1);
+        stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
+        vm.stopPrank();
+
+        assertEq(stateOracle.getManager(address(adopter)), USER1, "Manager should be USER1");
+    }
+}
+
+contract AddAssertionWithWhitelist is WhitelistBase {
+    function test_addAssertionAfterAddingToWhitelist() public {
+        // Add USER1 to whitelist
+        vm.prank(ADMIN);
+        stateOracle.addToWhitelist(USER1);
+
+        // USER1 registers adopter
+        vm.startPrank(USER1);
+        OwnableAdopter adopter = new OwnableAdopter(USER1);
+        stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
+        vm.stopPrank();
+
+        bytes32 assertionId = keccak256("assertion1");
+
+        // USER1 adds assertion
+        vm.prank(USER1);
+        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+
+        assertTrue(stateOracle.hasAssertion(address(adopter), assertionId), "Assertion should be added");
+    }
+
+    function testFuzz_RevertIf_addAssertionByNonWhitelistedManager(bytes32 assertionId) public {
+        // Disable whitelist temporarily to register
+        vm.prank(ADMIN);
+        stateOracle.disableWhitelist();
+
+        // USER1 registers adopter (not whitelisted but whitelist disabled)
+        vm.startPrank(USER1);
+        OwnableAdopter adopter = new OwnableAdopter(USER1);
+        stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
+        vm.stopPrank();
+
+        // Re-enable whitelist
+        vm.prank(ADMIN);
+        stateOracle.enableWhitelist();
+
+        // USER1 tries to add assertion but is not whitelisted
+        vm.prank(USER1);
+        vm.expectRevert(StateOracle.NotWhitelisted.selector);
+        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+    }
+
+    function test_addAssertionWhenWhitelistDisabled() public {
+        // Disable whitelist
+        vm.prank(ADMIN);
+        stateOracle.disableWhitelist();
+
+        // USER1 registers adopter (not whitelisted but whitelist disabled)
+        vm.startPrank(USER1);
+        OwnableAdopter adopter = new OwnableAdopter(USER1);
+        stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
+        vm.stopPrank();
+
+        bytes32 assertionId = keccak256("assertion1");
+
+        // USER1 adds assertion
+        vm.prank(USER1);
+        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+
+        assertTrue(stateOracle.hasAssertion(address(adopter), assertionId), "Assertion should be added");
+    }
+}
+
+contract RemoveAssertionWithWhitelist is WhitelistBase {
+    function test_removeAssertionByNonWhitelistedManager() public {
+        // Add USER1 to whitelist and register adopter
+        vm.prank(ADMIN);
+        stateOracle.addToWhitelist(USER1);
+
+        vm.startPrank(USER1);
+        OwnableAdopter adopter = new OwnableAdopter(USER1);
+        stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
+        vm.stopPrank();
+
+        bytes32 assertionId = keccak256("assertion1");
+
+        // USER1 adds assertion
+        vm.prank(USER1);
+        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+
+        // Remove USER1 from whitelist
+        vm.prank(ADMIN);
+        stateOracle.removeFromWhitelist(USER1);
+
+        // USER1 should still be able to remove assertion (no whitelist check on remove)
+        vm.roll(block.number + 1);
+        vm.prank(USER1);
+        stateOracle.removeAssertion(address(adopter), assertionId);
+
+        (, uint128 deactivationBlock) = stateOracle.getAssertionWindow(address(adopter), assertionId);
+        assertTrue(deactivationBlock != 0, "Assertion should be marked for removal");
     }
 }
