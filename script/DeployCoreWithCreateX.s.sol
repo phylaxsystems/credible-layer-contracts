@@ -10,11 +10,13 @@ import {DAVerifierECDSA} from "../src/verification/da/DAVerifierECDSA.sol";
 import {ICreateX, CREATE_X_ADDRESS} from "./ICreateX.sol";
 import {DeployCore} from "./DeployCore.s.sol";
 import {console2} from "forge-std/console2.sol";
+import {AdminVerifierSuperAdmin} from "../src/verification/admin/AdminVerifierSuperAdmin.sol";
 
 contract DeployCoreWithCreateX is DeployCore {
     string public constant SALT_DA_VERIFIER_NAME = "credible-layer-da-verifier-ecdsa";
     string public constant SALT_ADMIN_VERIFIER_OWNER_NAME = "credible-layer-admin-verifier-owner";
     string public constant SALT_ADMIN_VERIFIER_WHITELIST_NAME = "credible-layer-admin-verifier-whitelist";
+    string public constant SALT_ADMIN_VERIFIER_SUPER_ADMIN_NAME = "credible-layer-admin-verifier-super-admin";
     string public constant SALT_STATE_ORACLE_NAME = "credible-layer-state-oracle-implementation";
     string public constant SALT_STATE_ORACLE_PROXY_NAME = "credible-layer-state-oracle-proxy";
 
@@ -40,6 +42,15 @@ contract DeployCoreWithCreateX is DeployCore {
             abi.encodePacked(type(AdminVerifierWhitelist).creationCode, abi.encode(whitelistAdmin))
         );
         console2.log("Admin Verifier (Whitelist) deployed at", verifier);
+        return verifier;
+    }
+
+    function _deploySuperAdminAdminVerifier() internal override returns (address verifier) {
+        verifier = deployCreate3(
+            SALT_ADMIN_VERIFIER_SUPER_ADMIN_NAME,
+            abi.encodePacked(type(AdminVerifierSuperAdmin).creationCode, abi.encode(superAdmin))
+        );
+        console2.log("Admin Verifier (Super Admin) deployed at", verifier);
         return verifier;
     }
 
