@@ -47,6 +47,16 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
     error TooManyAssertions();
     /// @notice Thrown when attempting to remove or modify an already removed assertion
     error AssertionAlreadyRemoved();
+    /// @notice Thrown when whitelist is enabled and caller is not whitelisted
+    error NotWhitelisted();
+    /// @notice Thrown when attempting to add an account that is already whitelisted
+    error AlreadyWhitelisted(address account);
+    /// @notice Thrown when attempting to remove an account that is not whitelisted
+    error AccountNotWhitelisted(address account);
+    /// @notice Thrown when attempting to enable an already enabled whitelist
+    error WhitelistAlreadyEnabled();
+    /// @notice Thrown when attempting to disable an already disabled whitelist
+    error WhitelistAlreadyDisabled();
 
     /// @notice Struct containing assertion adopter data
     /// @param manager Address authorized to manage assertions
@@ -97,16 +107,42 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
     /// @param deactivationBlock The block number when the assertion is going to be inactive
     event AssertionRemoved(address assertionAdopter, bytes32 assertionId, uint256 deactivationBlock);
 
+    /// @notice Emitted when the whitelist is enabled
+    event WhitelistEnabled();
+
+    /// @notice Emitted when the whitelist is disabled
+    event WhitelistDisabled();
+
+    /// @notice Emitted when an account is added to the whitelist
+    /// @param account The address added to the whitelist
+    event AddedToWhitelist(address indexed account);
+
+    /// @notice Emitted when an account is removed from the whitelist
+    /// @param account The address removed from the whitelist
+    event RemovedFromWhitelist(address indexed account);
+
     /// @notice Maps contract addresses to their assertion adopter data
     mapping(address => AssertionAdopter) public assertionAdopters;
 
     /// @notice The admin verification registry
     mapping(IAdminVerifier adminVerifier => bool isRegistered) public adminVerifiers;
 
+    /// @notice Whether the whitelist is enabled
+    bool public whitelistEnabled;
+
+    /// @notice Mapping of whitelisted addresses
+    mapping(address => bool) public whitelist;
+
     /// @notice Ensures caller is the manager of the contract
     /// @param contractAddress The address of the contract being managed
     modifier onlyManager(address contractAddress) {
         _onlyManager(contractAddress);
+        _;
+    }
+
+    /// @notice Ensures caller is whitelisted when whitelist is enabled
+    modifier onlyWhitelisted() {
+        require(!whitelistEnabled || whitelist[msg.sender], NotWhitelisted());
         _;
     }
 
@@ -141,6 +177,7 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
         initializer
     {
         _transferOwnership(admin);
+        whitelistEnabled = true;
         for (uint256 i = 0; i < _adminVerifiers.length; i++) {
             _addAdminVerifier(_adminVerifiers[i]);
         }
@@ -153,6 +190,7 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
     /// @param data The data to pass to the admin verifier
     function registerAssertionAdopter(address contractAddress, IAdminVerifier adminVerifier, bytes calldata data)
         external
+        onlyWhitelisted
     {
         require(adminVerifiers.isRegistered(adminVerifier), AdminVerifierRegistry.AdminVerifierNotRegistered());
         require(adminVerifier.verifyAdmin(contractAddress, msg.sender, data), UnauthorizedRegistrant());
@@ -171,6 +209,7 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
     function addAssertion(address contractAddress, bytes32 assertionId, bytes calldata metadata, bytes calldata proof)
         external
         onlyManager(contractAddress)
+        onlyWhitelisted
     {
         require(!hasAssertion(contractAddress, assertionId), AssertionAlreadyExists());
         require(DA_VERIFIER.verifyDA(assertionId, metadata, proof), InvalidProof());
@@ -194,6 +233,43 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
     /// @param assertionId The unique identifier of the assertion to remove
     function removeAssertionByOwner(address contractAddress, bytes32 assertionId) external onlyOwner {
         _removeAssertion(contractAddress, assertionId);
+    }
+
+    /// @notice Enables the whitelist
+    function enableWhitelist() external onlyOwner {
+        require(!whitelistEnabled, WhitelistAlreadyEnabled());
+        whitelistEnabled = true;
+        emit WhitelistEnabled();
+    }
+
+    /// @notice Disables the whitelist
+    function disableWhitelist() external onlyOwner {
+        require(whitelistEnabled, WhitelistAlreadyDisabled());
+        whitelistEnabled = false;
+        emit WhitelistDisabled();
+    }
+
+    /// @notice Adds an account to the whitelist
+    /// @param account The address to add
+    function addToWhitelist(address account) external onlyOwner {
+        require(!whitelist[account], AlreadyWhitelisted(account));
+        whitelist[account] = true;
+        emit AddedToWhitelist(account);
+    }
+
+    /// @notice Removes an account from the whitelist
+    /// @param account The address to remove
+    function removeFromWhitelist(address account) external onlyOwner {
+        require(whitelist[account], AccountNotWhitelisted(account));
+        whitelist[account] = false;
+        emit RemovedFromWhitelist(account);
+    }
+
+    /// @notice Checks if an account is allowed to perform whitelisted actions
+    /// @param account The address to check
+    /// @return True if whitelist is disabled (everyone allowed) or account is whitelisted
+    function isWhitelisted(address account) external view returns (bool) {
+        return !whitelistEnabled || whitelist[account];
     }
 
     /// @notice Internal function to remove an assertion from an assertion adopter
