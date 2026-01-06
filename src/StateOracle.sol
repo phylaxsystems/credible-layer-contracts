@@ -4,17 +4,17 @@ pragma solidity ^0.8.28;
 import {IDAVerifier} from "./interfaces/IDAVerifier.sol";
 import {IAdminVerifier} from "./interfaces/IAdminVerifier.sol";
 import {Batch} from "./Batch.sol";
-import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Initializable} from "solady/utils/Initializable.sol";
 import {AdminVerifierRegistry} from "./lib/AdminVerifierRegistry.sol";
+import {StateOracleAccessControl} from "./StateOracleAccessControl.sol";
 
 /// @title StateOracle
 /// @author @fredo (luehrs.fred@gmail.com)
 /// @notice Manages assertion adopters and their assertions
 /// @dev Provides functionality to register assertion adopters and manage their assertions
 
-contract StateOracle is Batch, Initializable, Ownable2Step {
+contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     using AdminVerifierRegistry for mapping(IAdminVerifier adminVerifier => bool isRegistered);
 
     /// @notice Number of blocks to wait before an assertion becomes active or inactive
@@ -25,8 +25,6 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
 
     /// @notice Thrown when an unauthorized address attempts to register an assertion adopter
     error UnauthorizedRegistrant();
-    /// @notice Thrown when an unauthorized address attempts to manage assertions
-    error UnauthorizedManager();
     /// @notice Thrown when attempting to transfer management to an invalid address
     error InvalidManagerTransferRequest();
     /// @notice Thrown when attempting to accept management when no transfer is pending
@@ -142,12 +140,17 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
 
     /// @notice Ensures caller is whitelisted when whitelist is enabled
     modifier onlyWhitelisted() {
-        require(!whitelistEnabled || whitelist[msg.sender], NotWhitelisted());
+        _onlyWhitelisted();
         _;
     }
 
     /// @notice Maximum number of assertions per assertion adopter
     uint16 public maxAssertionsPerAA;
+
+    /// @notice Internal function to ensure caller is whitelisted when whitelist is enabled
+    function _onlyWhitelisted() internal view {
+        require(!whitelistEnabled || whitelist[msg.sender], NotWhitelisted());
+    }
 
     /// @notice Internal function to ensure caller is the manager of the contract
     /// @param contractAddress The address of the contract being managed
@@ -176,7 +179,8 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
         external
         initializer
     {
-        _transferOwnership(admin);
+        _initializeRoles(admin);
+
         whitelistEnabled = true;
         for (uint256 i = 0; i < _adminVerifiers.length; i++) {
             _addAdminVerifier(_adminVerifiers[i]);
@@ -228,22 +232,22 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
         _removeAssertion(contractAddress, assertionId);
     }
 
-    /// @notice Removes an assertion from an assertion adopter by the state oracle owner
+    /// @notice Removes an assertion from an assertion adopter by guardian
     /// @param contractAddress The address of the assertion adopter
     /// @param assertionId The unique identifier of the assertion to remove
-    function removeAssertionByOwner(address contractAddress, bytes32 assertionId) external onlyOwner {
+    function removeAssertionByGuardian(address contractAddress, bytes32 assertionId) external onlyGuardian {
         _removeAssertion(contractAddress, assertionId);
     }
 
     /// @notice Enables the whitelist
-    function enableWhitelist() external onlyOwner {
+    function enableWhitelist() external onlyGovernance {
         require(!whitelistEnabled, WhitelistAlreadyEnabled());
         whitelistEnabled = true;
         emit WhitelistEnabled();
     }
 
     /// @notice Disables the whitelist
-    function disableWhitelist() external onlyOwner {
+    function disableWhitelist() external onlyGovernance {
         require(whitelistEnabled, WhitelistAlreadyDisabled());
         whitelistEnabled = false;
         emit WhitelistDisabled();
@@ -251,7 +255,7 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
 
     /// @notice Adds an account to the whitelist
     /// @param account The address to add
-    function addToWhitelist(address account) external onlyOwner {
+    function addToWhitelist(address account) external onlyOperator {
         require(!whitelist[account], AlreadyWhitelisted(account));
         whitelist[account] = true;
         emit AddedToWhitelist(account);
@@ -259,7 +263,7 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
 
     /// @notice Removes an account from the whitelist
     /// @param account The address to remove
-    function removeFromWhitelist(address account) external onlyOwner {
+    function removeFromWhitelist(address account) external onlyOperator {
         require(whitelist[account], AccountNotWhitelisted(account));
         whitelist[account] = false;
         emit RemovedFromWhitelist(account);
@@ -350,9 +354,9 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
         _transferManager(contractAddress, msg.sender);
     }
 
-    /// @notice Revokes the manager role from an assertion adopter by the state oracle owner
+    /// @notice Revokes the manager role from an assertion adopter by guardian
     /// @param contractAddress The address of the assertion adopter
-    function revokeManager(address contractAddress) external onlyOwner {
+    function revokeManager(address contractAddress) external onlyGuardian {
         require(assertionAdopters[contractAddress].manager != address(0), AssertionAdopterNotRegistered());
         _transferManager(contractAddress, address(0));
     }
@@ -368,7 +372,7 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
 
     /// @notice Adds an authorization module to the state oracle
     /// @param adminVerifier The admin verifier to add
-    function addAdminVerifier(IAdminVerifier adminVerifier) external onlyOwner {
+    function addAdminVerifier(IAdminVerifier adminVerifier) external onlyGovernance {
         _addAdminVerifier(adminVerifier);
     }
 
@@ -380,7 +384,7 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
 
     /// @notice Removes an authorization module from the state oracle
     /// @param adminVerifier The admin verifier to remove
-    function removeAdminVerifier(IAdminVerifier adminVerifier) external onlyOwner {
+    function removeAdminVerifier(IAdminVerifier adminVerifier) external onlyGovernance {
         adminVerifiers.remove(adminVerifier);
     }
 
@@ -393,7 +397,7 @@ contract StateOracle is Batch, Initializable, Ownable2Step {
 
     /// @notice Sets the maximum number of assertions per assertion adopter
     /// @param _maxAssertionsPerAA The maximum number of assertions per assertion adopter
-    function setMaxAssertionsPerAA(uint16 _maxAssertionsPerAA) external onlyOwner {
+    function setMaxAssertionsPerAA(uint16 _maxAssertionsPerAA) external onlyGovernance {
         _setMaxAssertionsPerAA(_maxAssertionsPerAA);
     }
 

@@ -3,10 +3,10 @@ pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {StateOracle} from "../src/StateOracle.sol";
+import {StateOracleAccessControl} from "../src/StateOracleAccessControl.sol";
 import {OwnableAdopter} from "./utils/Adopter.sol";
 import {DAVerifierMock} from "./utils/DAVerifierMock.sol";
 import {ProxyHelper} from "./utils/ProxyHelper.t.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Initializable} from "solady/utils/Initializable.sol";
 import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
 import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.sol";
@@ -15,6 +15,9 @@ import {AdminVerifierRegistry} from "../src/lib/AdminVerifierRegistry.sol";
 contract StateOracleBase is Test, ProxyHelper {
     address constant OWNER = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.OWNER")))));
     address constant DEPLOYER = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.DEPLOYER")))));
+    // ADMIN is different from proxy admin to avoid TransparentProxy interference
+    address constant STATE_ORACLE_ADMIN =
+        address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.STATE_ORACLE_ADMIN")))));
     uint128 constant TIMEOUT = 1000;
     uint16 constant MAX_ASSERTIONS_PER_AA = 5;
     StateOracle stateOracle;
@@ -35,12 +38,13 @@ contract StateOracleBase is Test, ProxyHelper {
         IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
         verifiers[0] = adminVerifier;
 
-        bytes memory data =
-            abi.encodeWithSelector(StateOracle.initialize.selector, ADMIN, verifiers, MAX_ASSERTIONS_PER_AA);
+        bytes memory data = abi.encodeWithSelector(
+            StateOracle.initialize.selector, STATE_ORACLE_ADMIN, verifiers, MAX_ASSERTIONS_PER_AA
+        );
         stateOracle = StateOracle(deployProxy(address(implementation), data));
 
         // Disable whitelist for existing tests
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
     }
 
@@ -80,31 +84,6 @@ contract Constructor is StateOracleBase {
     }
 }
 
-contract OwnableTest is StateOracleBase {
-    function test_ownerIsZeroOnImplementation() public {
-        DAVerifierMock daVerifier = new DAVerifierMock();
-        StateOracle implementation = new StateOracle(TIMEOUT, address(daVerifier));
-        assertEq(implementation.owner(), address(0), "implementation owner should be zero");
-    }
-
-    function test_ownerIsInitializerOnProxy() public view {
-        assertEq(stateOracle.owner(), ADMIN, "proxy owner should match initializer");
-    }
-
-    function test_transferOwnership() public {
-        address newOwner = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.NEW_OWNER")))));
-
-        vm.prank(ADMIN);
-        stateOracle.transferOwnership(newOwner);
-        assertEq(stateOracle.owner(), ADMIN, "ownership transfer should be pending");
-
-        vm.prank(newOwner);
-        stateOracle.acceptOwnership();
-
-        assertEq(stateOracle.owner(), newOwner, "ownership transfer should be completed");
-    }
-}
-
 contract Initialize is StateOracleBase {
     function test_RevertIf_alreadyInitialized() public {
         vm.expectRevert(Initializable.InvalidInitialization.selector);
@@ -119,7 +98,7 @@ contract Initialize is StateOracleBase {
         IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
         verifiers[0] = adminVerifier;
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        stateOracle.initialize(ADMIN, verifiers, MAX_ASSERTIONS_PER_AA);
+        stateOracle.initialize(STATE_ORACLE_ADMIN, verifiers, MAX_ASSERTIONS_PER_AA);
     }
 }
 
@@ -163,7 +142,7 @@ contract Register is StateOracleBase {
 
     function testFuzz_RevertIf_registerAssertionAdopterAdminVerifierNotAdded() public {
         IAdminVerifier _adminVerifier = IAdminVerifier(new AdminVerifierOwner());
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         vm.expectRevert(AdminVerifierRegistry.AdminVerifierNotRegistered.selector);
         stateOracle.registerAssertionAdopter(address(1), _adminVerifier, new bytes(0));
     }
@@ -183,7 +162,7 @@ contract AddAssertion is StateOracleBase {
 
         vm.assume(unauthorizedManager != manager);
         vm.prank(unauthorizedManager);
-        vm.expectRevert(StateOracle.UnauthorizedManager.selector);
+        vm.expectRevert(StateOracleAccessControl.UnauthorizedManager.selector);
         stateOracle.addAssertion(adopter, assertionId, new bytes(0), new bytes(0));
     }
 
@@ -276,7 +255,7 @@ contract RemoveAssertion is StateOracleBase {
         vm.roll(block.number + 1);
 
         vm.prank(stateOracle.owner());
-        stateOracle.removeAssertionByOwner(adopter, assertionId);
+        stateOracle.removeAssertionByGuardian(adopter, assertionId);
         (uint128 activationBlock, uint128 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
         assertEq(activationBlock, activationBlockBefore, "Activation should not change");
         assertEq(
@@ -291,13 +270,20 @@ contract RemoveAssertion is StateOracleBase {
         noAdmin(unauthorizedAdmin)
     {
         vm.assume(unauthorizedAdmin != stateOracle.owner());
+        vm.assume(unauthorizedAdmin != address(this));
+        bytes32 guardianRole = stateOracle.GUARDIAN_ROLE();
+        vm.assume(!stateOracle.hasRole(guardianRole, unauthorizedAdmin));
 
         (address adopter, address manager) = registerAssertionAdopter();
         addAssertionAndAssert(manager, adopter, assertionId);
 
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), unauthorizedAdmin, guardianRole
+            )
+        );
         vm.prank(unauthorizedAdmin);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedAdmin));
-        stateOracle.removeAssertionByOwner(adopter, assertionId);
+        stateOracle.removeAssertionByGuardian(adopter, assertionId);
     }
 
     function testFuzz_RevertIf_removeAssertionByUnauthorized(bytes32 assertionId, address unauthorizedManager)
@@ -309,7 +295,7 @@ contract RemoveAssertion is StateOracleBase {
         addAssertionAndAssert(manager, adopter, assertionId);
 
         vm.prank(unauthorizedManager);
-        vm.expectRevert(StateOracle.UnauthorizedManager.selector);
+        vm.expectRevert(StateOracleAccessControl.UnauthorizedManager.selector);
         stateOracle.removeAssertion(adopter, assertionId);
     }
 
@@ -372,7 +358,7 @@ contract TransferManager is TransferManagementBase {
         vm.expectRevert(StateOracle.NoPendingManager.selector);
         stateOracle.acceptManagerTransfer(adopter);
         // Unauthorized manager cannot transfer manager
-        vm.expectRevert(StateOracle.UnauthorizedManager.selector);
+        vm.expectRevert(StateOracleAccessControl.UnauthorizedManager.selector);
         stateOracle.transferManager(adopter, newManager);
         vm.stopPrank();
 
@@ -390,7 +376,7 @@ contract TransferManager is TransferManagementBase {
 
         vm.prank(unauthorizedManager);
         // Unauthorized manager cannot accept transfer
-        vm.expectRevert(StateOracle.UnauthorizedManager.selector);
+        vm.expectRevert(StateOracleAccessControl.UnauthorizedManager.selector);
         stateOracle.acceptManagerTransfer(adopter);
 
         vm.prank(newManager);
@@ -427,7 +413,7 @@ contract TransferManager is TransferManagementBase {
         assertEq(stateOracle.getPendingManager(adopter), newManager2, "newManager2 should be pending");
 
         vm.prank(newManager);
-        vm.expectRevert(StateOracle.UnauthorizedManager.selector);
+        vm.expectRevert(StateOracleAccessControl.UnauthorizedManager.selector);
         stateOracle.acceptManagerTransfer(adopter);
 
         vm.prank(newManager2);
@@ -477,9 +463,19 @@ contract RevokeManager is TransferManagementBase {
         noAdmin(unauthorizedManager)
     {
         vm.assume(unauthorizedManager != stateOracle.owner());
+        vm.assume(unauthorizedManager != address(this));
+        bytes32 guardianRole = stateOracle.GUARDIAN_ROLE();
+        vm.assume(!stateOracle.hasRole(guardianRole, unauthorizedManager));
         (address adopter,) = registerAssertionAdopter();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                unauthorizedManager,
+                guardianRole
+            )
+        );
         vm.prank(unauthorizedManager);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedManager));
         stateOracle.revokeManager(adopter);
     }
 
@@ -496,7 +492,7 @@ contract AddAdminVerifier is StateOracleBase {
     function test_addAdminVerifier(IAdminVerifier _adminVerifier) public {
         vm.assume(_adminVerifier != adminVerifier);
         assertEq(stateOracle.adminVerifiers(_adminVerifier), false, "Admin verifier should not have been added");
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addAdminVerifier(_adminVerifier);
         assertEq(stateOracle.adminVerifiers(_adminVerifier), true, "Admin verifier should be added");
     }
@@ -506,15 +502,23 @@ contract AddAdminVerifier is StateOracleBase {
         noAdmin(unauthorizedAdmin)
     {
         vm.assume(unauthorizedAdmin != stateOracle.owner());
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.assume(!stateOracle.hasRole(governanceRole, unauthorizedAdmin));
         IAdminVerifier _adminVerifier = IAdminVerifier(new AdminVerifierOwner());
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                unauthorizedAdmin,
+                governanceRole
+            )
+        );
         vm.prank(unauthorizedAdmin);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedAdmin));
         stateOracle.addAdminVerifier(_adminVerifier);
     }
 
     function testFuzz_RevertIf_addAdminVerifierTwice(IAdminVerifier _adminVerifier) public {
         vm.assume(_adminVerifier != adminVerifier);
-        vm.startPrank(ADMIN);
+        vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addAdminVerifier(_adminVerifier);
         vm.expectRevert(AdminVerifierRegistry.AdminVerifierAlreadyRegistered.selector);
         stateOracle.addAdminVerifier(_adminVerifier);
@@ -525,7 +529,7 @@ contract AddAdminVerifier is StateOracleBase {
 contract RemoveAdminVerifier is StateOracleBase {
     function test_removeAdminVerifier() public {
         IAdminVerifier _adminVerifier = IAdminVerifier(new AdminVerifierOwner());
-        vm.startPrank(ADMIN);
+        vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addAdminVerifier(_adminVerifier);
         assertEq(stateOracle.adminVerifiers(_adminVerifier), true, "Admin verifier should have been added");
         stateOracle.removeAdminVerifier(_adminVerifier);
@@ -538,18 +542,26 @@ contract RemoveAdminVerifier is StateOracleBase {
         noAdmin(unauthorizedAdmin)
     {
         vm.assume(unauthorizedAdmin != stateOracle.owner());
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.assume(!stateOracle.hasRole(governanceRole, unauthorizedAdmin));
         IAdminVerifier _adminVerifier = IAdminVerifier(new AdminVerifierOwner());
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addAdminVerifier(_adminVerifier);
         assertEq(stateOracle.adminVerifiers(_adminVerifier), true, "Admin verifier should have been added");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                unauthorizedAdmin,
+                governanceRole
+            )
+        );
         vm.prank(unauthorizedAdmin);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedAdmin));
         stateOracle.removeAdminVerifier(_adminVerifier);
     }
 
     function testFuzz_RevertIf_removeAdminVerifierNotRegistered(IAdminVerifier _adminVerifier) public {
         vm.assume(_adminVerifier != adminVerifier);
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         vm.expectRevert(AdminVerifierRegistry.AdminVerifierNotRegistered.selector);
         stateOracle.removeAdminVerifier(_adminVerifier);
     }
@@ -594,7 +606,7 @@ contract Batch is StateOracleBase {
 
 contract SetMaxAssertionsPerAA is StateOracleBase {
     function test_setMaxAssertionsPerAA(uint16 maxAssertionsPerAA) public {
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.setMaxAssertionsPerAA(maxAssertionsPerAA);
         assertEq(stateOracle.maxAssertionsPerAA(), maxAssertionsPerAA, "Max assertions per AA should have been set");
     }
@@ -604,15 +616,23 @@ contract SetMaxAssertionsPerAA is StateOracleBase {
         noAdmin(unauthorizedAdmin)
     {
         vm.assume(unauthorizedAdmin != stateOracle.owner());
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.assume(!stateOracle.hasRole(governanceRole, unauthorizedAdmin));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                unauthorizedAdmin,
+                governanceRole
+            )
+        );
         vm.prank(unauthorizedAdmin);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedAdmin));
         stateOracle.setMaxAssertionsPerAA(maxAssertionsPerAA);
     }
 
     function test_AddAssertionsThenLowerMaxAndRevertOnAdd() public {
         // Set initial maxAssertionsPerAA to a high value
         uint16 initialMax = 2;
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.setMaxAssertionsPerAA(initialMax);
         assertEq(stateOracle.maxAssertionsPerAA(), initialMax, "Max assertions per AA should have been set");
 
@@ -624,7 +644,7 @@ contract SetMaxAssertionsPerAA is StateOracleBase {
 
         // Lower maxAssertionsPerAA below N
         uint16 lowerMax = uint16(initialMax - 1);
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.setMaxAssertionsPerAA(lowerMax);
         assertEq(stateOracle.maxAssertionsPerAA(), lowerMax, "Max assertions per AA should be lowered");
 
@@ -643,8 +663,11 @@ contract WhitelistBase is StateOracleBase {
     function setUp() public virtual override {
         super.setUp();
         // Re-enable whitelist for whitelist tests
-        vm.prank(ADMIN);
+        vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.enableWhitelist();
+        // Grant OPERATOR_ROLE to STATE_ORACLE_ADMIN for existing whitelist tests
+        stateOracle.grantRole(stateOracle.OPERATOR_ROLE(), STATE_ORACLE_ADMIN);
+        vm.stopPrank();
     }
 }
 
@@ -666,7 +689,7 @@ contract AddToWhitelist is WhitelistBase {
         vm.expectEmit(true, false, false, false, address(stateOracle));
         emit StateOracle.AddedToWhitelist(USER1);
 
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
 
         assertTrue(stateOracle.whitelist(USER1), "user should be whitelisted");
@@ -677,15 +700,24 @@ contract AddToWhitelist is WhitelistBase {
         public
         noAdmin(unauthorizedCaller)
     {
-        vm.assume(unauthorizedCaller != ADMIN);
+        vm.assume(unauthorizedCaller != STATE_ORACLE_ADMIN);
+        vm.assume(unauthorizedCaller != address(this));
+        bytes32 operatorRole = stateOracle.OPERATOR_ROLE();
+        bytes32 operatorAdminRole = stateOracle.OPERATOR_ADMIN_ROLE();
+        vm.assume(!stateOracle.hasRole(operatorRole, unauthorizedCaller));
+        vm.assume(!stateOracle.hasRole(operatorAdminRole, unauthorizedCaller));
 
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), unauthorizedCaller, operatorRole
+            )
+        );
         vm.prank(unauthorizedCaller);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedCaller));
         stateOracle.addToWhitelist(USER1);
     }
 
     function test_RevertIf_addAlreadyWhitelistedAccount() public {
-        vm.startPrank(ADMIN);
+        vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
 
         vm.expectRevert(abi.encodeWithSelector(StateOracle.AlreadyWhitelisted.selector, USER1));
@@ -696,7 +728,7 @@ contract AddToWhitelist is WhitelistBase {
 
 contract RemoveFromWhitelist is WhitelistBase {
     function test_removeFromWhitelist() public {
-        vm.startPrank(ADMIN);
+        vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
         assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted");
 
@@ -714,18 +746,27 @@ contract RemoveFromWhitelist is WhitelistBase {
         public
         noAdmin(unauthorizedCaller)
     {
-        vm.assume(unauthorizedCaller != ADMIN);
+        vm.assume(unauthorizedCaller != STATE_ORACLE_ADMIN);
+        vm.assume(unauthorizedCaller != address(this));
+        bytes32 operatorRole = stateOracle.OPERATOR_ROLE();
+        bytes32 operatorAdminRole = stateOracle.OPERATOR_ADMIN_ROLE();
+        vm.assume(!stateOracle.hasRole(operatorRole, unauthorizedCaller));
+        vm.assume(!stateOracle.hasRole(operatorAdminRole, unauthorizedCaller));
 
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
 
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), unauthorizedCaller, operatorRole
+            )
+        );
         vm.prank(unauthorizedCaller);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedCaller));
         stateOracle.removeFromWhitelist(USER1);
     }
 
     function test_RevertIf_removeNonWhitelistedAccount() public {
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         vm.expectRevert(abi.encodeWithSelector(StateOracle.AccountNotWhitelisted.selector, USER1));
         stateOracle.removeFromWhitelist(USER1);
     }
@@ -738,7 +779,7 @@ contract EnableWhitelist is StateOracleBase {
         vm.expectEmit(false, false, false, false, address(stateOracle));
         emit StateOracle.WhitelistEnabled();
 
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.enableWhitelist();
 
         assertTrue(stateOracle.whitelistEnabled(), "whitelist should be enabled");
@@ -748,15 +789,23 @@ contract EnableWhitelist is StateOracleBase {
         public
         noAdmin(unauthorizedCaller)
     {
-        vm.assume(unauthorizedCaller != ADMIN);
+        vm.assume(unauthorizedCaller != STATE_ORACLE_ADMIN);
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.assume(!stateOracle.hasRole(governanceRole, unauthorizedCaller));
 
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                unauthorizedCaller,
+                governanceRole
+            )
+        );
         vm.prank(unauthorizedCaller);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedCaller));
         stateOracle.enableWhitelist();
     }
 
     function test_RevertIf_enableAlreadyEnabledWhitelist() public {
-        vm.startPrank(ADMIN);
+        vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.enableWhitelist();
 
         vm.expectRevert(StateOracle.WhitelistAlreadyEnabled.selector);
@@ -772,7 +821,7 @@ contract DisableWhitelist is WhitelistBase {
         vm.expectEmit(false, false, false, false, address(stateOracle));
         emit StateOracle.WhitelistDisabled();
 
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
 
         assertFalse(stateOracle.whitelistEnabled(), "whitelist should be disabled");
@@ -782,15 +831,23 @@ contract DisableWhitelist is WhitelistBase {
         public
         noAdmin(unauthorizedCaller)
     {
-        vm.assume(unauthorizedCaller != ADMIN);
+        vm.assume(unauthorizedCaller != STATE_ORACLE_ADMIN);
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.assume(!stateOracle.hasRole(governanceRole, unauthorizedCaller));
 
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                unauthorizedCaller,
+                governanceRole
+            )
+        );
         vm.prank(unauthorizedCaller);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, unauthorizedCaller));
         stateOracle.disableWhitelist();
     }
 
     function test_RevertIf_disableAlreadyDisabledWhitelist() public {
-        vm.startPrank(ADMIN);
+        vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
 
         vm.expectRevert(StateOracle.WhitelistAlreadyDisabled.selector);
@@ -799,7 +856,7 @@ contract DisableWhitelist is WhitelistBase {
     }
 
     function test_whitelistedUserWhenDisabled() public {
-        vm.startPrank(ADMIN);
+        vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
         assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted");
 
@@ -813,7 +870,7 @@ contract DisableWhitelist is WhitelistBase {
     }
 
     function test_nonWhitelistedUserWhenDisabled() public {
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
 
         assertTrue(
@@ -823,7 +880,7 @@ contract DisableWhitelist is WhitelistBase {
     }
 
     function test_whitelistedUserAfterReenabling() public {
-        vm.startPrank(ADMIN);
+        vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
         assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted");
 
@@ -841,7 +898,7 @@ contract DisableWhitelist is WhitelistBase {
 
 contract RegisterAssertionAdopterWithWhitelist is WhitelistBase {
     function test_registerByWhitelistedUser() public {
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
 
         vm.startPrank(USER1);
@@ -856,7 +913,7 @@ contract RegisterAssertionAdopterWithWhitelist is WhitelistBase {
         public
         noAdmin(nonWhitelistedUser)
     {
-        vm.assume(nonWhitelistedUser != ADMIN);
+        vm.assume(nonWhitelistedUser != STATE_ORACLE_ADMIN);
         vm.assume(nonWhitelistedUser != address(0));
 
         vm.startPrank(nonWhitelistedUser);
@@ -867,7 +924,7 @@ contract RegisterAssertionAdopterWithWhitelist is WhitelistBase {
     }
 
     function test_registerByNonWhitelistedUserWhenDisabled() public {
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
 
         vm.startPrank(USER1);
@@ -882,7 +939,7 @@ contract RegisterAssertionAdopterWithWhitelist is WhitelistBase {
 contract AddAssertionWithWhitelist is WhitelistBase {
     function test_addAssertionAfterAddingToWhitelist() public {
         // Add USER1 to whitelist
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
 
         // USER1 registers adopter
@@ -902,7 +959,7 @@ contract AddAssertionWithWhitelist is WhitelistBase {
 
     function testFuzz_RevertIf_addAssertionByNonWhitelistedManager(bytes32 assertionId) public {
         // Disable whitelist temporarily to register
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
 
         // USER1 registers adopter (not whitelisted but whitelist disabled)
@@ -912,7 +969,7 @@ contract AddAssertionWithWhitelist is WhitelistBase {
         vm.stopPrank();
 
         // Re-enable whitelist
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.enableWhitelist();
 
         // USER1 tries to add assertion but is not whitelisted
@@ -923,7 +980,7 @@ contract AddAssertionWithWhitelist is WhitelistBase {
 
     function test_addAssertionWhenWhitelistDisabled() public {
         // Disable whitelist
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
 
         // USER1 registers adopter (not whitelisted but whitelist disabled)
@@ -945,7 +1002,7 @@ contract AddAssertionWithWhitelist is WhitelistBase {
 contract RemoveAssertionWithWhitelist is WhitelistBase {
     function test_removeAssertionByNonWhitelistedManager() public {
         // Add USER1 to whitelist and register adopter
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
 
         vm.startPrank(USER1);
@@ -960,7 +1017,7 @@ contract RemoveAssertionWithWhitelist is WhitelistBase {
         stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
 
         // Remove USER1 from whitelist
-        vm.prank(ADMIN);
+        vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.removeFromWhitelist(USER1);
 
         // USER1 should still be able to remove assertion (no whitelist check on remove)
@@ -970,5 +1027,576 @@ contract RemoveAssertionWithWhitelist is WhitelistBase {
 
         (, uint128 deactivationBlock) = stateOracle.getAssertionWindow(address(adopter), assertionId);
         assertTrue(deactivationBlock != 0, "Assertion should be marked for removal");
+    }
+}
+
+contract OperatorRoleBase is WhitelistBase {
+    address constant OPERATOR = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.OPERATOR")))));
+
+    function setUp() public virtual override {
+        super.setUp();
+        // Grant OPERATOR_ROLE to OPERATOR address
+        vm.startPrank(STATE_ORACLE_ADMIN);
+        stateOracle.grantRole(stateOracle.OPERATOR_ROLE(), OPERATOR);
+        vm.stopPrank();
+    }
+}
+
+contract OperatorCanManageWhitelist is OperatorRoleBase {
+    function test_operatorCanAddToWhitelist() public {
+        assertFalse(stateOracle.isWhitelisted(USER1), "user should not be whitelisted initially");
+
+        vm.prank(OPERATOR);
+        stateOracle.addToWhitelist(USER1);
+
+        assertTrue(stateOracle.whitelist(USER1), "user should be whitelisted");
+        assertTrue(stateOracle.isWhitelisted(USER1), "user should pass isWhitelisted check");
+    }
+
+    function test_operatorCanRemoveFromWhitelist() public {
+        vm.prank(OPERATOR);
+        stateOracle.addToWhitelist(USER1);
+        assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted");
+
+        vm.prank(OPERATOR);
+        stateOracle.removeFromWhitelist(USER1);
+
+        assertFalse(stateOracle.whitelist(USER1), "user should not be whitelisted");
+        assertFalse(stateOracle.isWhitelisted(USER1), "user should not pass isWhitelisted check");
+    }
+
+    function testFuzz_RevertIf_nonOperatorAddsToWhitelist(address unauthorizedCaller)
+        public
+        noAdmin(unauthorizedCaller)
+    {
+        vm.assume(unauthorizedCaller != OPERATOR);
+        vm.assume(unauthorizedCaller != STATE_ORACLE_ADMIN);
+        vm.assume(unauthorizedCaller != address(this));
+        bytes32 operatorRole = stateOracle.OPERATOR_ROLE();
+        bytes32 operatorAdminRole = stateOracle.OPERATOR_ADMIN_ROLE();
+        vm.assume(!stateOracle.hasRole(operatorRole, unauthorizedCaller));
+        vm.assume(!stateOracle.hasRole(operatorAdminRole, unauthorizedCaller));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), unauthorizedCaller, operatorRole
+            )
+        );
+        vm.prank(unauthorizedCaller);
+        stateOracle.addToWhitelist(USER1);
+    }
+
+    function testFuzz_RevertIf_nonOperatorRemovesFromWhitelist(address unauthorizedCaller)
+        public
+        noAdmin(unauthorizedCaller)
+    {
+        vm.assume(unauthorizedCaller != OPERATOR);
+        vm.assume(unauthorizedCaller != STATE_ORACLE_ADMIN);
+        vm.assume(unauthorizedCaller != address(this));
+        bytes32 operatorRole = stateOracle.OPERATOR_ROLE();
+        bytes32 operatorAdminRole = stateOracle.OPERATOR_ADMIN_ROLE();
+        vm.assume(!stateOracle.hasRole(operatorRole, unauthorizedCaller));
+        vm.assume(!stateOracle.hasRole(operatorAdminRole, unauthorizedCaller));
+
+        vm.prank(OPERATOR);
+        stateOracle.addToWhitelist(USER1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), unauthorizedCaller, operatorRole
+            )
+        );
+        vm.prank(unauthorizedCaller);
+        stateOracle.removeFromWhitelist(USER1);
+    }
+}
+
+contract OwnerOnlyFunctionsRemainProtected is OperatorRoleBase {
+    function test_operatorCannotEnableWhitelist() public {
+        vm.prank(STATE_ORACLE_ADMIN);
+        stateOracle.disableWhitelist();
+
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(OPERATOR);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), OPERATOR, governanceRole
+            )
+        );
+        stateOracle.enableWhitelist();
+    }
+
+    function test_operatorCannotDisableWhitelist() public {
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(OPERATOR);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), OPERATOR, governanceRole
+            )
+        );
+        stateOracle.disableWhitelist();
+    }
+
+    function test_operatorCannotSetMaxAssertionsPerAA() public {
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(OPERATOR);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), OPERATOR, governanceRole
+            )
+        );
+        stateOracle.setMaxAssertionsPerAA(10);
+    }
+
+    function test_operatorCannotAddAdminVerifier() public {
+        IAdminVerifier newVerifier = IAdminVerifier(new AdminVerifierOwner());
+
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(OPERATOR);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), OPERATOR, governanceRole
+            )
+        );
+        stateOracle.addAdminVerifier(newVerifier);
+    }
+
+    function test_operatorCannotRemoveAdminVerifier() public {
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(OPERATOR);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), OPERATOR, governanceRole
+            )
+        );
+        stateOracle.removeAdminVerifier(adminVerifier);
+    }
+
+    function test_operatorCannotRemoveAssertionByOwner() public {
+        // Setup: Create adopter and assertion
+        vm.prank(OPERATOR);
+        stateOracle.addToWhitelist(USER1);
+
+        vm.startPrank(USER1);
+        OwnableAdopter adopter = new OwnableAdopter(USER1);
+        stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
+        bytes32 assertionId = keccak256("assertion1");
+        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+        vm.stopPrank();
+
+        vm.roll(block.number + 1);
+
+        bytes32 guardianRole = stateOracle.GUARDIAN_ROLE();
+        vm.prank(OPERATOR);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), OPERATOR, guardianRole
+            )
+        );
+        stateOracle.removeAssertionByGuardian(address(adopter), assertionId);
+    }
+
+    function test_operatorCannotRevokeManager() public {
+        // Setup: Create adopter
+        vm.prank(OPERATOR);
+        stateOracle.addToWhitelist(USER1);
+
+        vm.startPrank(USER1);
+        OwnableAdopter adopter = new OwnableAdopter(USER1);
+        stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
+        vm.stopPrank();
+
+        bytes32 guardianRole = stateOracle.GUARDIAN_ROLE();
+        vm.prank(OPERATOR);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), OPERATOR, guardianRole
+            )
+        );
+        stateOracle.revokeManager(address(adopter));
+    }
+}
+
+contract GuardianRoleBase is OperatorRoleBase {
+    address constant GUARDIAN = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.GUARDIAN")))));
+
+    function setUp() public virtual override {
+        super.setUp();
+        vm.startPrank(STATE_ORACLE_ADMIN);
+        stateOracle.grantGuardianRole(GUARDIAN);
+        vm.stopPrank();
+    }
+}
+
+contract GuardianAdminCanManageGuardians is OperatorRoleBase {
+    address constant GUARDIAN_ADMIN_USER =
+        address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.GUARDIAN_ADMIN_USER")))));
+    address constant NEW_GUARDIAN =
+        address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.NEW_GUARDIAN")))));
+
+    function setUp() public virtual override {
+        super.setUp();
+        vm.prank(STATE_ORACLE_ADMIN);
+        stateOracle.grantGuardianAdminRole(GUARDIAN_ADMIN_USER);
+    }
+
+    function test_guardianAdminCanGrantGuardianRole() public {
+        assertFalse(
+            stateOracle.hasRole(stateOracle.GUARDIAN_ROLE(), NEW_GUARDIAN),
+            "New guardian should not have role initially"
+        );
+
+        vm.prank(GUARDIAN_ADMIN_USER);
+        stateOracle.grantGuardianRole(NEW_GUARDIAN);
+
+        assertTrue(
+            stateOracle.hasRole(stateOracle.GUARDIAN_ROLE(), NEW_GUARDIAN), "New guardian should have role after grant"
+        );
+    }
+
+    function test_guardianAdminCanRevokeGuardianRole() public {
+        vm.prank(GUARDIAN_ADMIN_USER);
+        stateOracle.grantGuardianRole(NEW_GUARDIAN);
+        assertTrue(stateOracle.hasRole(stateOracle.GUARDIAN_ROLE(), NEW_GUARDIAN), "New guardian should have role");
+
+        vm.prank(GUARDIAN_ADMIN_USER);
+        stateOracle.revokeGuardianRole(NEW_GUARDIAN);
+
+        assertFalse(
+            stateOracle.hasRole(stateOracle.GUARDIAN_ROLE(), NEW_GUARDIAN),
+            "New guardian should not have role after revoke"
+        );
+    }
+
+    function testFuzz_RevertIf_nonGuardianAdminGrantsGuardianRole(address unauthorizedCaller)
+        public
+        noAdmin(unauthorizedCaller)
+    {
+        vm.assume(unauthorizedCaller != STATE_ORACLE_ADMIN);
+        vm.assume(unauthorizedCaller != GUARDIAN_ADMIN_USER);
+        vm.assume(unauthorizedCaller != address(this));
+
+        bytes32 guardianAdminRole = stateOracle.GUARDIAN_ADMIN_ROLE();
+        vm.prank(unauthorizedCaller);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                unauthorizedCaller,
+                guardianAdminRole
+            )
+        );
+        stateOracle.grantGuardianRole(NEW_GUARDIAN);
+    }
+
+    function testFuzz_RevertIf_nonGuardianAdminRevokesGuardianRole(address unauthorizedCaller)
+        public
+        noAdmin(unauthorizedCaller)
+    {
+        vm.assume(unauthorizedCaller != STATE_ORACLE_ADMIN);
+        vm.assume(unauthorizedCaller != GUARDIAN_ADMIN_USER);
+        vm.assume(unauthorizedCaller != address(this));
+
+        vm.prank(GUARDIAN_ADMIN_USER);
+        stateOracle.grantGuardianRole(NEW_GUARDIAN);
+
+        bytes32 guardianAdminRole = stateOracle.GUARDIAN_ADMIN_ROLE();
+        vm.prank(unauthorizedCaller);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                unauthorizedCaller,
+                guardianAdminRole
+            )
+        );
+        stateOracle.revokeGuardianRole(NEW_GUARDIAN);
+    }
+}
+
+contract GuardianEmergencyActions is GuardianRoleBase {
+    function test_guardianCanRemoveAssertion() public {
+        // Setup: Create adopter and assertion
+        vm.prank(OPERATOR);
+        stateOracle.addToWhitelist(USER1);
+
+        vm.startPrank(USER1);
+        OwnableAdopter adopter = new OwnableAdopter(USER1);
+        stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
+        bytes32 assertionId = keccak256("assertion1");
+        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+        vm.stopPrank();
+
+        (uint128 activationBlockBefore,) = stateOracle.getAssertionWindow(address(adopter), assertionId);
+
+        vm.roll(block.number + 1);
+        uint256 removalBlock = block.number;
+
+        // Guardian can remove assertion
+        vm.prank(GUARDIAN);
+        stateOracle.removeAssertionByGuardian(address(adopter), assertionId);
+
+        // Verify deactivation block is set correctly
+        (uint128 activationBlock, uint128 deactivationBlock) =
+            stateOracle.getAssertionWindow(address(adopter), assertionId);
+        assertEq(activationBlock, activationBlockBefore, "Activation block should not change");
+        // casting to 'uint128' is safe because block.number will never exceed uint128 in any realistic scenario
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint128 expectedDeactivationBlock = uint128(removalBlock) + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
+        assertEq(deactivationBlock, expectedDeactivationBlock, "Deactivation block should be set correctly");
+    }
+
+    function test_guardianCanRevokeManager() public {
+        // Setup: Create adopter
+        vm.prank(OPERATOR);
+        stateOracle.addToWhitelist(USER1);
+
+        vm.startPrank(USER1);
+        OwnableAdopter adopter = new OwnableAdopter(USER1);
+        stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
+        vm.stopPrank();
+
+        address manager = stateOracle.getManager(address(adopter));
+        assertEq(manager, USER1, "Manager should be USER1 initially");
+
+        // Guardian can revoke manager
+        vm.prank(GUARDIAN);
+        stateOracle.revokeManager(address(adopter));
+
+        address newManager = stateOracle.getManager(address(adopter));
+        assertEq(newManager, address(0), "Manager should be revoked");
+    }
+
+    function test_guardianCannotAddToWhitelist() public {
+        assertFalse(stateOracle.isWhitelisted(USER1), "user should not be whitelisted initially");
+
+        bytes32 operatorRole = stateOracle.OPERATOR_ROLE();
+        vm.prank(GUARDIAN);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), GUARDIAN, operatorRole
+            )
+        );
+        stateOracle.addToWhitelist(USER1);
+    }
+
+    function test_guardianCannotRemoveFromWhitelist() public {
+        vm.prank(OPERATOR);
+        stateOracle.addToWhitelist(USER1);
+        assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted");
+
+        bytes32 operatorRole = stateOracle.OPERATOR_ROLE();
+        vm.prank(GUARDIAN);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), GUARDIAN, operatorRole
+            )
+        );
+        stateOracle.removeFromWhitelist(USER1);
+    }
+
+    function test_guardianCannotEnableWhitelist() public {
+        vm.prank(STATE_ORACLE_ADMIN);
+        stateOracle.disableWhitelist();
+
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(GUARDIAN);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), GUARDIAN, governanceRole
+            )
+        );
+        stateOracle.enableWhitelist();
+    }
+
+    function test_guardianCannotDisableWhitelist() public {
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(GUARDIAN);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), GUARDIAN, governanceRole
+            )
+        );
+        stateOracle.disableWhitelist();
+    }
+
+    function test_guardianCannotSetMaxAssertionsPerAA() public {
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(GUARDIAN);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), GUARDIAN, governanceRole
+            )
+        );
+        stateOracle.setMaxAssertionsPerAA(10);
+    }
+
+    function test_guardianCannotAddAdminVerifier() public {
+        IAdminVerifier newVerifier = IAdminVerifier(new AdminVerifierOwner());
+
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(GUARDIAN);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), GUARDIAN, governanceRole
+            )
+        );
+        stateOracle.addAdminVerifier(newVerifier);
+    }
+
+    function test_guardianCannotRemoveAdminVerifier() public {
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(GUARDIAN);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), GUARDIAN, governanceRole
+            )
+        );
+        stateOracle.removeAdminVerifier(adminVerifier);
+    }
+}
+
+contract OperatorAdminCanManageOperators is OperatorRoleBase {
+    address constant OPERATOR_ADMIN_USER =
+        address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.OPERATOR_ADMIN_USER")))));
+    address constant NEW_OPERATOR =
+        address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.NEW_OPERATOR")))));
+
+    function setUp() public virtual override {
+        super.setUp();
+        vm.prank(STATE_ORACLE_ADMIN);
+        stateOracle.grantOperatorAdminRole(OPERATOR_ADMIN_USER);
+    }
+
+    function test_operatorAdminCanGrantOperatorRole() public {
+        assertFalse(
+            stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), NEW_OPERATOR),
+            "New operator should not have role initially"
+        );
+
+        vm.prank(OPERATOR_ADMIN_USER);
+        stateOracle.grantOperatorRole(NEW_OPERATOR);
+
+        assertTrue(
+            stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), NEW_OPERATOR), "New operator should have role after grant"
+        );
+    }
+
+    function test_operatorAdminCanRevokeOperatorRole() public {
+        vm.prank(OPERATOR_ADMIN_USER);
+        stateOracle.grantOperatorRole(NEW_OPERATOR);
+        assertTrue(stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), NEW_OPERATOR), "New operator should have role");
+
+        vm.prank(OPERATOR_ADMIN_USER);
+        stateOracle.revokeOperatorRole(NEW_OPERATOR);
+
+        assertFalse(
+            stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), NEW_OPERATOR),
+            "New operator should not have role after revoke"
+        );
+    }
+
+    function testFuzz_RevertIf_nonOperatorAdminGrantsOperatorRole(address unauthorizedCaller)
+        public
+        noAdmin(unauthorizedCaller)
+    {
+        vm.assume(unauthorizedCaller != STATE_ORACLE_ADMIN);
+        vm.assume(unauthorizedCaller != OPERATOR_ADMIN_USER);
+        vm.assume(unauthorizedCaller != address(this));
+        bytes32 operatorAdminRole = stateOracle.OPERATOR_ADMIN_ROLE();
+        vm.assume(!stateOracle.hasRole(operatorAdminRole, unauthorizedCaller));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                unauthorizedCaller,
+                operatorAdminRole
+            )
+        );
+        vm.prank(unauthorizedCaller);
+        stateOracle.grantOperatorRole(NEW_OPERATOR);
+    }
+
+    function testFuzz_RevertIf_nonOperatorAdminRevokesOperatorRole(address unauthorizedCaller)
+        public
+        noAdmin(unauthorizedCaller)
+    {
+        vm.assume(unauthorizedCaller != STATE_ORACLE_ADMIN);
+        vm.assume(unauthorizedCaller != OPERATOR_ADMIN_USER);
+        vm.assume(unauthorizedCaller != address(this));
+        bytes32 operatorAdminRole = stateOracle.OPERATOR_ADMIN_ROLE();
+        vm.assume(!stateOracle.hasRole(operatorAdminRole, unauthorizedCaller));
+
+        vm.prank(OPERATOR_ADMIN_USER);
+        stateOracle.grantOperatorRole(NEW_OPERATOR);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                unauthorizedCaller,
+                operatorAdminRole
+            )
+        );
+        vm.prank(unauthorizedCaller);
+        stateOracle.revokeOperatorRole(NEW_OPERATOR);
+    }
+
+    function test_operatorAdminCannotManageWhitelist() public {
+        bytes32 operatorRole = stateOracle.OPERATOR_ROLE();
+        vm.prank(OPERATOR_ADMIN_USER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                OPERATOR_ADMIN_USER,
+                operatorRole
+            )
+        );
+        stateOracle.addToWhitelist(USER1);
+    }
+
+    function test_operatorAdminCannotRemoveAssertionByOwner() public {
+        // Setup: Create adopter and assertion
+        vm.prank(OPERATOR);
+        stateOracle.addToWhitelist(USER1);
+
+        vm.startPrank(USER1);
+        OwnableAdopter adopter = new OwnableAdopter(USER1);
+        stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
+        bytes32 assertionId = keccak256("assertion1");
+        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+        vm.stopPrank();
+
+        vm.roll(block.number + 1);
+
+        bytes32 guardianRole = stateOracle.GUARDIAN_ROLE();
+        vm.prank(OPERATOR_ADMIN_USER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                OPERATOR_ADMIN_USER,
+                guardianRole
+            )
+        );
+        stateOracle.removeAssertionByGuardian(address(adopter), assertionId);
+    }
+
+    function test_operatorAdminCannotRevokeManager() public {
+        // Setup: Create adopter
+        vm.prank(OPERATOR);
+        stateOracle.addToWhitelist(USER1);
+
+        vm.startPrank(USER1);
+        OwnableAdopter adopter = new OwnableAdopter(USER1);
+        stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
+        vm.stopPrank();
+
+        bytes32 guardianRole = stateOracle.GUARDIAN_ROLE();
+        vm.prank(OPERATOR_ADMIN_USER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                OPERATOR_ADMIN_USER,
+                guardianRole
+            )
+        );
+        stateOracle.revokeManager(address(adopter));
     }
 }
