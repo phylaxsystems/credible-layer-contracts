@@ -26,8 +26,8 @@ contract DeployCore is Script {
     bool deployWhitelistVerifier;
     address whitelistAdmin;
 
-    uint128 secondAssertionTimelockBlocks;
-    uint16 secondMaxAssertionsPerAA;
+    uint128 stagingAssertionTimelockBlocks;
+    uint16 stagingMaxAssertionsPerAA;
 
     function setUp() public {
 
@@ -43,8 +43,8 @@ contract DeployCore is Script {
         whitelistAdmin = vm.envAddress("ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS");
 
        // Second state oracle parameters
-        secondMaxAssertionsPerAA = uint16(vm.envUint("SECOND_STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
-        secondAssertionTimelockBlocks = uint128(vm.envUint("SECOND_STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"));
+        stagingMaxAssertionsPerAA = uint16(vm.envUint("STAGING_STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
+        stagingAssertionTimelockBlocks = uint128(vm.envUint("STAGING_STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"));
 
         assert(daProver != address(0));
         assert(assertionTimelockBlocks > 0);
@@ -74,8 +74,8 @@ contract DeployCore is Script {
         _deployStateOracleProxy(stateOracle, adminVerifierDeployments, maxAssertionsPerAA);
 
         // Deploy staging State Oracle
-        address stateOracle2 = _deployStateOracle(daVerifier, secondAssertionTimelockBlocks);
-        _deployStateOracleProxy(stateOracle2, adminVerifierDeployments, secondMaxAssertionsPerAA);
+        address stagingOracle = _deployStateOracle(daVerifier, stagingAssertionTimelockBlocks);
+        _deployStateOracleProxy(stagingOracle, adminVerifierDeployments, stagingMaxAssertionsPerAA);
     }
 
     function fundPersistentAccounts() public broadcast {
