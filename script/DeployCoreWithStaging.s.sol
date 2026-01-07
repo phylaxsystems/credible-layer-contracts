@@ -4,14 +4,14 @@ pragma solidity ^0.8.28;
 import {DeployCore} from "./DeployCore.s.sol";
 import {console2} from "forge-std/console2.sol";
 
-/// Address used to deploy the assertion contract to the forked db, and to call assertion functions.
+// Address used to deploy the assertion contract to the forked db, and to call assertion functions.
 address constant CALLER = 0x00000000000000000000000000000000000001a4;
 
-/// Fixed address of the assertion contract is used to deploy assertion contracts.
-/// Deploying assertion contracts via the caller address @ nonce 0 results in this address.
+// Fixed address of the assertion contract is used to deploy assertion contracts.
+// Deploying assertion contracts via the caller address @ nonce 0 results in this address.
 address constant ASSERTION_CONTRACT = 0x63F9abBE8aA6Ba1261Ef3B0CBfb25A5Ff8eEeD10;
 
-/// Precompile address
+// Precompile address
 address constant PRECOMPILE_ADDRESS = 0x4461812e00718ff8D80929E3bF595AEaaa7b881E;
 
 contract DeployCoreWithStaging is DeployCore {

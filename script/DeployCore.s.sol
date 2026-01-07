@@ -21,7 +21,6 @@ contract DeployCore is Script {
 
     function setUp() virtual public {
 
-        // First state oracle
         maxAssertionsPerAA = uint16(vm.envUint("STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
         assertionTimelockBlocks = uint128(vm.envUint("STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"));
         admin = vm.envAddress("STATE_ORACLE_ADMIN_ADDRESS");
@@ -101,14 +100,14 @@ contract DeployCore is Script {
         }
     }
 
-    function _deployStateOracle(address daVerifier, uint128 timelockBlocks) public virtual returns (address) {
+    function _deployStateOracle(address daVerifier, uint128 timelockBlocks) internal virtual returns (address) {
         address stateOracle = address(new StateOracle(timelockBlocks, daVerifier));
         console2.log("State Oracle Implementation deployed at", stateOracle);
         return stateOracle;
     }
 
     function _deployStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments, uint16 maxAssertions)
-        public
+        internal
         virtual
         returns (address)
     {
