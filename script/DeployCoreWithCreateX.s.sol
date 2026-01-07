@@ -43,7 +43,11 @@ contract DeployCoreWithCreateX is DeployCore {
         return verifier;
     }
 
-    function _deployStateOracle(address daVerifier, uint128 assertionTimelockBlocks) internal override returns (address) {
+    function _deployStateOracle(address daVerifier, uint128 assertionTimelockBlocks)
+        internal
+        override
+        returns (address)
+    {
         address stateOracle = deployCreate3(
             SALT_STATE_ORACLE_NAME,
             abi.encodePacked(type(StateOracle).creationCode, abi.encode(assertionTimelockBlocks, daVerifier))

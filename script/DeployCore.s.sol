@@ -19,13 +19,12 @@ contract DeployCore is Script {
     bool deployWhitelistVerifier;
     address whitelistAdmin;
 
-    function setUp() virtual public {
-
+    function setUp() public virtual {
         maxAssertionsPerAA = uint16(vm.envUint("STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
         assertionTimelockBlocks = uint128(vm.envUint("STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"));
         admin = vm.envAddress("STATE_ORACLE_ADMIN_ADDRESS");
         daProver = vm.envAddress("DA_PROVER_ADDRESS");
-        
+
         // Verifiers
         deployOwnerVerifier = vm.envBool("DEPLOY_ADMIN_VERIFIER_OWNER");
         deployWhitelistVerifier = vm.envBool("DEPLOY_ADMIN_VERIFIER_WHITELIST");
@@ -44,12 +43,11 @@ contract DeployCore is Script {
     }
 
     function run() public virtual broadcast {
-
         // Deploy DA Verifier (ECDSA)
         address daVerifier = _deployDAVerifier();
         // Deploy Admin Verifier (Owner)
         address[] memory adminVerifierDeployments = _deployAdminVerifiers();
-        
+
         // Deploy State Oracle
         address stateOracle = _deployStateOracle(daVerifier, assertionTimelockBlocks);
         // Deploy State Oracle Proxy
@@ -68,7 +66,11 @@ contract DeployCore is Script {
         _deployStateOracle(daVerifier, timelockBlocks);
     }
 
-    function deployStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments, uint16 maxAssertions) public broadcast {
+    function deployStateOracleProxy(
+        address stateOracle,
+        address[] memory adminVerifierDeployments,
+        uint16 maxAssertions
+    ) public broadcast {
         _deployStateOracleProxy(stateOracle, adminVerifierDeployments, maxAssertions);
     }
 
@@ -106,11 +108,11 @@ contract DeployCore is Script {
         return stateOracle;
     }
 
-    function _deployStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments, uint16 maxAssertions)
-        internal
-        virtual
-        returns (address)
-    {
+    function _deployStateOracleProxy(
+        address stateOracle,
+        address[] memory adminVerifierDeployments,
+        uint16 maxAssertions
+    ) internal virtual returns (address) {
         IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](adminVerifierDeployments.length);
         for (uint256 i = 0; i < adminVerifierDeployments.length; i++) {
             adminVerifiers[i] = IAdminVerifier(adminVerifierDeployments[i]);
