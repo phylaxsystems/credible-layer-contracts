@@ -19,14 +19,34 @@ contract DeployCore is Script {
     bool deployWhitelistVerifier;
     address whitelistAdmin;
 
+    uint128 secondAssertionTimelockBlocks;
+    uint16 secondMaxAssertionsPerAA;
+
+    address caller;
+    address assertionContract;
+    address precompileAddress;
+
     function setUp() public {
+
+        // Persistant accounts
+        caller = vm.envAddress("CALLER");
+        assertionContract = vm.envAddress("ASSERTION_CONTRACT");
+        precompileAddress = vm.envAddress("PRECOMPILE");
+
+        // First state oracle
         maxAssertionsPerAA = uint16(vm.envUint("STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
         assertionTimelockBlocks = uint128(vm.envUint("STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"));
         admin = vm.envAddress("STATE_ORACLE_ADMIN_ADDRESS");
         daProver = vm.envAddress("DA_PROVER_ADDRESS");
+        
+        // Verifiers
         deployOwnerVerifier = vm.envBool("DEPLOY_ADMIN_VERIFIER_OWNER");
         deployWhitelistVerifier = vm.envBool("DEPLOY_ADMIN_VERIFIER_WHITELIST");
         whitelistAdmin = vm.envAddress("ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS");
+
+       // Second state oracle parameters
+        secondMaxAssertionsPerAA = uint16(vm.envUint("SECOND_STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
+        secondAssertionTimelockBlocks = uint128(vm.envUint("SECOND_STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"));
 
         assert(daProver != address(0));
         assert(assertionTimelockBlocks > 0);
@@ -41,14 +61,27 @@ contract DeployCore is Script {
     }
 
     function run() public broadcast {
+
+        // Fund persistants accounts with 1 wei if empty
+        _fundPersistentAccounts();        
+    
         // Deploy DA Verifier (ECDSA)
         address daVerifier = _deployDAVerifier();
         // Deploy Admin Verifier (Owner)
         address[] memory adminVerifierDeployments = _deployAdminVerifiers();
+        
         // Deploy State Oracle
-        address stateOracle = _deployStateOracle(daVerifier);
+        address stateOracle = _deployStateOracle(daVerifier, assertionTimelockBlocks);
         // Deploy State Oracle Proxy
-        _deployStateOracleProxy(stateOracle, adminVerifierDeployments);
+        _deployStateOracleProxy(stateOracle, adminVerifierDeployments, maxAssertionsPerAA);
+
+        // Deploy staging oracle
+        address stateOracle2 = _deployStateOracle(daVerifier, secondAssertionTimelockBlocks);
+        _deployStateOracleProxy(stateOracle2, adminVerifierDeployments, secondMaxAssertionsPerAA);
+    }
+
+    function fundPersistentAccounts() public broadcast {
+        _fundPersistentAccounts();
     }
 
     function deployDAVerifier() public broadcast {
@@ -59,12 +92,12 @@ contract DeployCore is Script {
         _deployAdminVerifiers();
     }
 
-    function deployStateOracle(address daVerifier) public broadcast {
-        _deployStateOracle(daVerifier);
+    function deployStateOracle(address daVerifier, uint128 timelockBlocks) public broadcast {
+        _deployStateOracle(daVerifier, timelockBlocks);
     }
 
-    function deployStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments) public broadcast {
-        _deployStateOracleProxy(stateOracle, adminVerifierDeployments);
+    function deployStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments, uint16 maxAssertions) public broadcast {
+        _deployStateOracleProxy(stateOracle, adminVerifierDeployments, maxAssertions);
     }
 
     function deployOwnerAdminVerifier() public broadcast {
@@ -73,6 +106,23 @@ contract DeployCore is Script {
 
     function deployWhitelistAdminVerifier() public broadcast {
         _deployWhitelistAdminVerifier();
+    }
+
+
+    function _fundPersistentAccounts() internal {
+        _fundIfEmpty(caller, "CALLER");
+        _fundIfEmpty(assertionContract, "ASSERTION_CONTRACT");
+        _fundIfEmpty(precompileAddress, "PRECOMPILE");
+    }
+
+    function _fundIfEmpty(address account, string memory name) internal {
+        if (account.balance == 0) {
+            (bool success,) = account.call{value: 1}("");
+            require(success, string.concat("Failed to fund ", name));
+            console2.log("Funded", name, "with 1 wei:", account);
+        } else {
+        console2.log("Already funded", name, "balance:", account.balance);
+        }
     }
 
     function _deployDAVerifier() internal virtual returns (address) {
@@ -95,13 +145,13 @@ contract DeployCore is Script {
         }
     }
 
-    function _deployStateOracle(address daVerifier) public virtual returns (address) {
-        address stateOracle = address(new StateOracle(assertionTimelockBlocks, daVerifier));
+    function _deployStateOracle(address daVerifier, uint128 timelockBlocks) public virtual returns (address) {
+        address stateOracle = address(new StateOracle(timelockBlocks, daVerifier));
         console2.log("State Oracle Implementation deployed at", stateOracle);
         return stateOracle;
     }
 
-    function _deployStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments)
+    function _deployStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments, uint16 maxAssertions)
         public
         virtual
         returns (address)
@@ -111,7 +161,7 @@ contract DeployCore is Script {
             adminVerifiers[i] = IAdminVerifier(adminVerifierDeployments[i]);
         }
         bytes memory initCallData =
-            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, maxAssertionsPerAA);
+            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, maxAssertions);
         address proxyAddress = address(new TransparentUpgradeableProxy(address(stateOracle), admin, initCallData));
         console2.log("State Oracle Proxy deployed at", proxyAddress);
         return proxyAddress;
