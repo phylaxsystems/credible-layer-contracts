@@ -10,6 +10,13 @@ import {console2} from "forge-std/console2.sol";
 import {Script} from "forge-std/Script.sol";
 import {AdminVerifierWhitelist} from "../src/verification/admin/AdminVerifierWhitelist.sol";
 
+address constant CALLER = 0x00000000000000000000000000000000000001A4;
+
+address constant ASSERTION_CONTRACT = 0x63f9abbe8aa6ba1261ef3b0cbfb25a5ff8eeed10;
+
+address constant PRECOMPILE_ADDRESS = 0x4461812e00718ff8D80929E3bF595AEaaa7b881E;
+
+
 contract DeployCore is Script {
     address admin;
     uint128 assertionTimelockBlocks;
@@ -22,16 +29,7 @@ contract DeployCore is Script {
     uint128 secondAssertionTimelockBlocks;
     uint16 secondMaxAssertionsPerAA;
 
-    address caller;
-    address assertionContract;
-    address precompileAddress;
-
     function setUp() public {
-
-        // Persistant accounts
-        caller = vm.envAddress("CALLER");
-        assertionContract = vm.envAddress("ASSERTION_CONTRACT");
-        precompileAddress = vm.envAddress("PRECOMPILE");
 
         // First state oracle
         maxAssertionsPerAA = uint16(vm.envUint("STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
@@ -110,9 +108,9 @@ contract DeployCore is Script {
 
 
     function _fundPersistentAccounts() internal {
-        _fundIfEmpty(caller, "CALLER");
-        _fundIfEmpty(assertionContract, "ASSERTION_CONTRACT");
-        _fundIfEmpty(precompileAddress, "PRECOMPILE");
+        _fundIfEmpty(CALLER, "CALLER");
+        _fundIfEmpty(ASSERTION_CONTRACT, "ASSERTION_CONTRACT");
+        _fundIfEmpty(PRECOMPILE_ADDRESS, "PRECOMPILE_ADDRESS");
     }
 
     function _fundIfEmpty(address account, string memory name) internal {
