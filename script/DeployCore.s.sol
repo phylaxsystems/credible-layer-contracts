@@ -10,9 +10,9 @@ import {console2} from "forge-std/console2.sol";
 import {Script} from "forge-std/Script.sol";
 import {AdminVerifierWhitelist} from "../src/verification/admin/AdminVerifierWhitelist.sol";
 
-address constant CALLER = 0x00000000000000000000000000000000000001A4;
+address constant CALLER = 0x00000000000000000000000000000000000001a4;
 
-address constant ASSERTION_CONTRACT = 0x63f9abbe8aa6ba1261ef3b0cbfb25a5ff8eeed10;
+address constant ASSERTION_CONTRACT = 0x63F9abBE8aA6Ba1261Ef3B0CBfb25A5Ff8eEeD10;
 
 address constant PRECOMPILE_ADDRESS = 0x4461812e00718ff8D80929E3bF595AEaaa7b881E;
 
@@ -73,7 +73,7 @@ contract DeployCore is Script {
         // Deploy State Oracle Proxy
         _deployStateOracleProxy(stateOracle, adminVerifierDeployments, maxAssertionsPerAA);
 
-        // Deploy staging oracle
+        // Deploy staging State Oracle
         address stateOracle2 = _deployStateOracle(daVerifier, secondAssertionTimelockBlocks);
         _deployStateOracleProxy(stateOracle2, adminVerifierDeployments, secondMaxAssertionsPerAA);
     }
