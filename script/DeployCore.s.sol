@@ -53,6 +53,8 @@ contract DeployCore is Script {
     }
 
     function run() public virtual broadcast {
+        _fundPersistentAccounts();
+
         // Deploy DA Verifier (ECDSA)
         address daVerifier = _deployDAVerifier();
         // Deploy Admin Verifier (Owner)

@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import {DeployCore} from "./DeployCore.s.sol";
-import {console2} from "forge-std/console2.sol";
 
 contract DeployCoreWithStaging is DeployCore {
     uint128 stagingAssertionTimelockBlocks;
@@ -22,13 +21,12 @@ contract DeployCoreWithStaging is DeployCore {
     function run() public override broadcast {
         // Fund persistent accounts with 1 wei if empty
         _fundPersistentAccounts();
-
         // Deploy DA Verifier (ECDSA)
         address daVerifier = _deployDAVerifier();
         // Deploy Admin Verifiers
         address[] memory adminVerifierDeployments = _deployAdminVerifiers();
 
-        // Deploy Production State Oracle
+        // Deploy state Oracle
         address stateOracle = _deployStateOracle(daVerifier, assertionTimelockBlocks);
         // Deploy State Oracle Proxy
         _deployStateOracleProxy(stateOracle, adminVerifierDeployments, maxAssertionsPerAA);
