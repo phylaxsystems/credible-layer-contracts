@@ -10,6 +10,16 @@ import {console2} from "forge-std/console2.sol";
 import {Script} from "forge-std/Script.sol";
 import {AdminVerifierWhitelist} from "../src/verification/admin/AdminVerifierWhitelist.sol";
 
+// Address used to deploy the assertion contract to the forked db, and to call assertion functions.
+address constant CALLER_ADDRESS = 0x00000000000000000000000000000000000001a4;
+
+// Fixed address of the assertion contract is used to deploy assertion contracts.
+// Deploying assertion contracts via the caller address @ nonce 0 results in this address.
+address constant ASSERTION_CONTRACT_ADDRESS = 0x63F9abBE8aA6Ba1261Ef3B0CBfb25A5Ff8eEeD10;
+
+// Precompile address
+address constant PRECOMPILE_ADDRESS = 0x4461812e00718ff8D80929E3bF595AEaaa7b881E;
+
 contract DeployCore is Script {
     address admin;
     uint128 assertionTimelockBlocks;
@@ -33,7 +43,7 @@ contract DeployCore is Script {
         assert(daProver != address(0));
         assert(assertionTimelockBlocks > 0);
         assert(admin != address(0));
-        assert(deployWhitelistVerifier && whitelistAdmin != address(0) || !deployWhitelistVerifier);
+        assert((deployWhitelistVerifier && whitelistAdmin != address(0)) || !deployWhitelistVerifier);
     }
 
     modifier broadcast() {
@@ -80,6 +90,10 @@ contract DeployCore is Script {
 
     function deployWhitelistAdminVerifier() public broadcast {
         _deployWhitelistAdminVerifier();
+    }
+
+    function fundPersistentAccounts() public broadcast {
+        _fundPersistentAccounts();
     }
 
     function _deployDAVerifier() internal virtual returns (address) {
@@ -134,5 +148,21 @@ contract DeployCore is Script {
         verifier = address(new AdminVerifierWhitelist(whitelistAdmin));
         console2.log("Admin Verifier (Whitelist) deployed at", verifier);
         return verifier;
+    }
+
+    function _fundPersistentAccounts() internal {
+        _fundIfEmpty(CALLER_ADDRESS, "CALLER_ADDRESS");
+        _fundIfEmpty(ASSERTION_CONTRACT_ADDRESS, "ASSERTION_CONTRACT_ADDRESS");
+        _fundIfEmpty(PRECOMPILE_ADDRESS, "PRECOMPILE_ADDRESS");
+    }
+
+    function _fundIfEmpty(address account, string memory name) internal {
+        if (account.balance == 0) {
+            (bool success,) = account.call{value: 1}("");
+            require(success, string.concat("Failed to fund ", name));
+            console2.log("Funded", name, "with 1 wei:", account);
+        } else {
+            console2.log("Already funded", name, "balance:", account.balance);
+        }
     }
 }

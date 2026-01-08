@@ -4,16 +4,6 @@ pragma solidity ^0.8.28;
 import {DeployCore} from "./DeployCore.s.sol";
 import {console2} from "forge-std/console2.sol";
 
-// Address used to deploy the assertion contract to the forked db, and to call assertion functions.
-address constant CALLER_ADDRESS = 0x00000000000000000000000000000000000001a4;
-
-// Fixed address of the assertion contract is used to deploy assertion contracts.
-// Deploying assertion contracts via the caller address @ nonce 0 results in this address.
-address constant ASSERTION_CONTRACT_ADDRESS = 0x63F9abBE8aA6Ba1261Ef3B0CBfb25A5Ff8eEeD10;
-
-// Precompile address
-address constant PRECOMPILE_ADDRESS = 0x4461812e00718ff8D80929E3bF595AEaaa7b881E;
-
 contract DeployCoreWithStaging is DeployCore {
     uint128 stagingAssertionTimelockBlocks;
     uint16 stagingMaxAssertionsPerAA;
@@ -47,21 +37,5 @@ contract DeployCoreWithStaging is DeployCore {
         address stagingOracle = _deployStateOracle(daVerifier, stagingAssertionTimelockBlocks);
         // Deploy staging State Oracle Proxy
         _deployStateOracleProxy(stagingOracle, adminVerifierDeployments, stagingMaxAssertionsPerAA);
-    }
-
-    function _fundPersistentAccounts() internal {
-        _fundIfEmpty(CALLER_ADDRESS, "CALLER_ADDRESS");
-        _fundIfEmpty(ASSERTION_CONTRACT_ADDRESS, "ASSERTION_CONTRACT_ADDRESS");
-        _fundIfEmpty(PRECOMPILE_ADDRESS, "PRECOMPILE_ADDRESS");
-    }
-
-    function _fundIfEmpty(address account, string memory name) internal {
-        if (account.balance == 0) {
-            (bool success,) = account.call{value: 1}("");
-            require(success, string.concat("Failed to fund ", name));
-            console2.log("Funded", name, "with 1 wei:", account);
-        } else {
-            console2.log("Already funded", name, "balance:", account.balance);
-        }
     }
 }
