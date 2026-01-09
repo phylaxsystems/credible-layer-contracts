@@ -7,6 +7,11 @@ contract DeployCoreWithStaging is DeployCore {
     uint128 stagingAssertionTimelockBlocks;
     uint16 stagingMaxAssertionsPerAA;
 
+    address public deployedDAVerifier;
+    address[] public deployedAdminVerifiers;
+    address public deployedProductionOracle;
+    address public deployedStagingOracle;
+
     function setUp() public override {
         super.setUp();
 
@@ -21,19 +26,20 @@ contract DeployCoreWithStaging is DeployCore {
     function run() public override broadcast {
         // Fund persistent accounts with 1 wei if empty
         _fundPersistentAccounts();
-        // Deploy DA Verifier (ECDSA)
-        address daVerifier = _deployDAVerifier();
-        // Deploy Admin Verifiers
-        address[] memory adminVerifierDeployments = _deployAdminVerifiers();
 
+        // Deploy DA Verifier (ECDSA)
+        deployedDAVerifier = _deployDAVerifier();
+        // Deploy Admin Verifiers
+        deployedAdminVerifiers = _deployAdminVerifiers();
         // Deploy state Oracle
-        address stateOracle = _deployStateOracle(daVerifier, assertionTimelockBlocks);
+        address stateOracle = _deployStateOracle(deployedDAVerifier, assertionTimelockBlocks);
         // Deploy State Oracle Proxy
-        _deployStateOracleProxy(stateOracle, adminVerifierDeployments, maxAssertionsPerAA);
+        deployedProductionOracle = _deployStateOracleProxy(stateOracle, deployedAdminVerifiers, maxAssertionsPerAA);
 
         // Deploy staging State Oracle
-        address stagingOracle = _deployStateOracle(daVerifier, stagingAssertionTimelockBlocks);
+        address stagingOracle = _deployStateOracle(deployedDAVerifier, stagingAssertionTimelockBlocks);
         // Deploy staging State Oracle Proxy
-        _deployStateOracleProxy(stagingOracle, adminVerifierDeployments, stagingMaxAssertionsPerAA);
+        deployedStagingOracle =
+            _deployStateOracleProxy(stagingOracle, deployedAdminVerifiers, stagingMaxAssertionsPerAA);
     }
 }
