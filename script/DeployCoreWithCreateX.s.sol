@@ -43,7 +43,11 @@ contract DeployCoreWithCreateX is DeployCore {
         return verifier;
     }
 
-    function _deployStateOracle(address daVerifier) public override returns (address) {
+    function _deployStateOracle(address daVerifier, uint128 assertionTimelockBlocks)
+        internal
+        override
+        returns (address)
+    {
         address stateOracle = deployCreate3(
             SALT_STATE_ORACLE_NAME,
             abi.encodePacked(type(StateOracle).creationCode, abi.encode(assertionTimelockBlocks, daVerifier))
@@ -52,18 +56,17 @@ contract DeployCoreWithCreateX is DeployCore {
         return stateOracle;
     }
 
-    function _deployStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments)
-        public
-        virtual
-        override
-        returns (address)
-    {
+    function _deployStateOracleProxy(
+        address stateOracle,
+        address[] memory adminVerifierDeployments,
+        uint16 maxAssertions
+    ) internal override returns (address) {
         IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](adminVerifierDeployments.length);
         for (uint256 i = 0; i < adminVerifierDeployments.length; i++) {
             adminVerifiers[i] = IAdminVerifier(adminVerifierDeployments[i]);
         }
         bytes memory initCallData =
-            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, maxAssertionsPerAA);
+            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, maxAssertions);
         address proxyAddress = deployCreate3(
             SALT_STATE_ORACLE_PROXY_NAME,
             abi.encodePacked(

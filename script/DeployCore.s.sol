@@ -10,6 +10,16 @@ import {console2} from "forge-std/console2.sol";
 import {Script} from "forge-std/Script.sol";
 import {AdminVerifierWhitelist} from "../src/verification/admin/AdminVerifierWhitelist.sol";
 
+// Address used to deploy the assertion contract to the forked db, and to call assertion functions.
+address constant CALLER_ADDRESS = 0x00000000000000000000000000000000000001a4;
+
+// Fixed address of the assertion contract is used to deploy assertion contracts.
+// Deploying assertion contracts via the caller address @ nonce 0 results in this address.
+address constant ASSERTION_CONTRACT_ADDRESS = 0x63F9abBE8aA6Ba1261Ef3B0CBfb25A5Ff8eEeD10;
+
+// Precompile address
+address constant PRECOMPILE_ADDRESS = 0x4461812e00718ff8D80929E3bF595AEaaa7b881E;
+
 contract DeployCore is Script {
     address admin;
     uint128 assertionTimelockBlocks;
@@ -19,11 +29,13 @@ contract DeployCore is Script {
     bool deployWhitelistVerifier;
     address whitelistAdmin;
 
-    function setUp() public {
+    function setUp() public virtual {
         maxAssertionsPerAA = uint16(vm.envUint("STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
         assertionTimelockBlocks = uint128(vm.envUint("STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"));
         admin = vm.envAddress("STATE_ORACLE_ADMIN_ADDRESS");
         daProver = vm.envAddress("DA_PROVER_ADDRESS");
+
+        // Verifiers
         deployOwnerVerifier = vm.envBool("DEPLOY_ADMIN_VERIFIER_OWNER");
         deployWhitelistVerifier = vm.envBool("DEPLOY_ADMIN_VERIFIER_WHITELIST");
         whitelistAdmin = vm.envAddress("ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS");
@@ -40,15 +52,18 @@ contract DeployCore is Script {
         vm.stopBroadcast();
     }
 
-    function run() public broadcast {
+    function run() public virtual broadcast {
+        _fundPersistentAccounts();
+
         // Deploy DA Verifier (ECDSA)
         address daVerifier = _deployDAVerifier();
         // Deploy Admin Verifier (Owner)
         address[] memory adminVerifierDeployments = _deployAdminVerifiers();
+
         // Deploy State Oracle
-        address stateOracle = _deployStateOracle(daVerifier);
+        address stateOracle = _deployStateOracle(daVerifier, assertionTimelockBlocks);
         // Deploy State Oracle Proxy
-        _deployStateOracleProxy(stateOracle, adminVerifierDeployments);
+        _deployStateOracleProxy(stateOracle, adminVerifierDeployments, maxAssertionsPerAA);
     }
 
     function deployDAVerifier() public broadcast {
@@ -59,12 +74,16 @@ contract DeployCore is Script {
         _deployAdminVerifiers();
     }
 
-    function deployStateOracle(address daVerifier) public broadcast {
-        _deployStateOracle(daVerifier);
+    function deployStateOracle(address daVerifier, uint128 timelockBlocks) public broadcast {
+        _deployStateOracle(daVerifier, timelockBlocks);
     }
 
-    function deployStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments) public broadcast {
-        _deployStateOracleProxy(stateOracle, adminVerifierDeployments);
+    function deployStateOracleProxy(
+        address stateOracle,
+        address[] memory adminVerifierDeployments,
+        uint16 maxAssertions
+    ) public broadcast {
+        _deployStateOracleProxy(stateOracle, adminVerifierDeployments, maxAssertions);
     }
 
     function deployOwnerAdminVerifier() public broadcast {
@@ -73,6 +92,10 @@ contract DeployCore is Script {
 
     function deployWhitelistAdminVerifier() public broadcast {
         _deployWhitelistAdminVerifier();
+    }
+
+    function fundPersistentAccounts() public broadcast {
+        _fundPersistentAccounts();
     }
 
     function _deployDAVerifier() internal virtual returns (address) {
@@ -95,23 +118,23 @@ contract DeployCore is Script {
         }
     }
 
-    function _deployStateOracle(address daVerifier) public virtual returns (address) {
-        address stateOracle = address(new StateOracle(assertionTimelockBlocks, daVerifier));
+    function _deployStateOracle(address daVerifier, uint128 timelockBlocks) internal virtual returns (address) {
+        address stateOracle = address(new StateOracle(timelockBlocks, daVerifier));
         console2.log("State Oracle Implementation deployed at", stateOracle);
         return stateOracle;
     }
 
-    function _deployStateOracleProxy(address stateOracle, address[] memory adminVerifierDeployments)
-        public
-        virtual
-        returns (address)
-    {
+    function _deployStateOracleProxy(
+        address stateOracle,
+        address[] memory adminVerifierDeployments,
+        uint16 maxAssertions
+    ) internal virtual returns (address) {
         IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](adminVerifierDeployments.length);
         for (uint256 i = 0; i < adminVerifierDeployments.length; i++) {
             adminVerifiers[i] = IAdminVerifier(adminVerifierDeployments[i]);
         }
         bytes memory initCallData =
-            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, maxAssertionsPerAA);
+            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, maxAssertions);
         address proxyAddress = address(new TransparentUpgradeableProxy(address(stateOracle), admin, initCallData));
         console2.log("State Oracle Proxy deployed at", proxyAddress);
         return proxyAddress;
@@ -127,5 +150,21 @@ contract DeployCore is Script {
         verifier = address(new AdminVerifierWhitelist(whitelistAdmin));
         console2.log("Admin Verifier (Whitelist) deployed at", verifier);
         return verifier;
+    }
+
+    function _fundPersistentAccounts() internal {
+        _fundIfEmpty(CALLER_ADDRESS, "CALLER_ADDRESS");
+        _fundIfEmpty(ASSERTION_CONTRACT_ADDRESS, "ASSERTION_CONTRACT_ADDRESS");
+        _fundIfEmpty(PRECOMPILE_ADDRESS, "PRECOMPILE_ADDRESS");
+    }
+
+    function _fundIfEmpty(address account, string memory name) internal {
+        if (account.balance == 0) {
+            (bool success,) = account.call{value: 1}("");
+            require(success, string.concat("Failed to fund ", name));
+            console2.log("Funded", name, "with 1 wei:", account);
+        } else {
+            console2.log("Already funded", name, "balance:", account.balance);
+        }
     }
 }
