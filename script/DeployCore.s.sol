@@ -43,7 +43,7 @@ contract DeployCore is Script {
         assert(daProver != address(0));
         assert(assertionTimelockBlocks > 0);
         assert(admin != address(0));
-        assert((deployWhitelistVerifier && whitelistAdmin != address(0)) || !deployWhitelistVerifier);
+        assert(deployWhitelistVerifier && whitelistAdmin != address(0) || !deployWhitelistVerifier);
     }
 
     modifier broadcast() {
