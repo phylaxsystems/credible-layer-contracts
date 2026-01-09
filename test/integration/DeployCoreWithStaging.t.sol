@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
-import {DeployCoreWithStaging} from "../../script/DeployCoreWithStaging.s.sol";
 import {CALLER_ADDRESS, ASSERTION_CONTRACT_ADDRESS, PRECOMPILE_ADDRESS} from "../../script/DeployCore.s.sol";
 import {StateOracle} from "../../src/StateOracle.sol";
 import {IAdminVerifier} from "../../src/interfaces/IAdminVerifier.sol";
@@ -12,7 +11,6 @@ import {DAVerifierECDSA} from "../../src/verification/da/DAVerifierECDSA.sol";
 import {OwnableAdopter} from "../utils/Adopter.sol";
 
 contract DeployCoreWithStagingIntegrationTest is Test {
-    DeployCoreWithStaging public deployer;
 
     address public admin = address(0x1);
     address public daProver = address(0x2);
