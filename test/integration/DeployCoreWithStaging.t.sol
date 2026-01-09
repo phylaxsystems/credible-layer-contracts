@@ -11,7 +11,6 @@ import {DAVerifierECDSA} from "../../src/verification/da/DAVerifierECDSA.sol";
 import {OwnableAdopter} from "../utils/Adopter.sol";
 
 contract DeployCoreWithStagingIntegrationTest is Test {
-
     address public admin = address(0x1);
     address public daProver = address(0x2);
     address public user = address(0x3);
