@@ -32,12 +32,13 @@ contract DeployCoreWithStaging is DeployCore {
         // Deploy Admin Verifiers
         deployedAdminVerifiers = _deployAdminVerifiers();
         // Deploy state Oracle
-        address stateOracle = _deployStateOracle(deployedDAVerifier, assertionTimelockBlocks);
+        address stateOracle = _deployStateOracle(deployedDAVerifier, assertionTimelockBlocks, "State Oracle");
         // Deploy State Oracle Proxy
         deployedProductionOracle = _deployStateOracleProxy(stateOracle, deployedAdminVerifiers, maxAssertionsPerAA);
 
         // Deploy staging State Oracle
-        address stagingOracle = _deployStateOracle(deployedDAVerifier, stagingAssertionTimelockBlocks);
+        address stagingOracle =
+            _deployStateOracle(deployedDAVerifier, stagingAssertionTimelockBlocks, "Staging State Oracle");
         // Deploy staging State Oracle Proxy
         deployedStagingOracle =
             _deployStateOracleProxy(stagingOracle, deployedAdminVerifiers, stagingMaxAssertionsPerAA);
