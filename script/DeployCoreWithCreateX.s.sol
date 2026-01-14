@@ -43,7 +43,7 @@ contract DeployCoreWithCreateX is DeployCore {
         return verifier;
     }
 
-    function _deployStateOracle(address daVerifier, uint128 assertionTimelockBlocks)
+    function _deployStateOracle(address daVerifier, uint128 assertionTimelockBlocks, string memory contractName)
         internal
         override
         returns (address)
@@ -52,7 +52,7 @@ contract DeployCoreWithCreateX is DeployCore {
             SALT_STATE_ORACLE_NAME,
             abi.encodePacked(type(StateOracle).creationCode, abi.encode(assertionTimelockBlocks, daVerifier))
         );
-        console2.log("State Oracle Implementation deployed at", stateOracle);
+        console2.log(string.concat(contractName, " Implementation deployed at"), stateOracle);
         return stateOracle;
     }
 
