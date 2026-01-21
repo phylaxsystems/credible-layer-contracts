@@ -61,7 +61,7 @@ contract DeployCore is Script {
         address[] memory adminVerifierDeployments = _deployAdminVerifiers();
 
         // Deploy State Oracle
-        address stateOracle = _deployStateOracle(daVerifier, assertionTimelockBlocks);
+        address stateOracle = _deployStateOracle(daVerifier, assertionTimelockBlocks, "State Oracle");
         // Deploy State Oracle Proxy
         _deployStateOracleProxy(stateOracle, adminVerifierDeployments, maxAssertionsPerAA);
     }
@@ -74,8 +74,11 @@ contract DeployCore is Script {
         _deployAdminVerifiers();
     }
 
-    function deployStateOracle(address daVerifier, uint128 timelockBlocks) public broadcast {
-        _deployStateOracle(daVerifier, timelockBlocks);
+    function deployStateOracle(address daVerifier, uint128 timelockBlocks, string memory contractName)
+        public
+        broadcast
+    {
+        _deployStateOracle(daVerifier, timelockBlocks, contractName);
     }
 
     function deployStateOracleProxy(
@@ -118,9 +121,13 @@ contract DeployCore is Script {
         }
     }
 
-    function _deployStateOracle(address daVerifier, uint128 timelockBlocks) internal virtual returns (address) {
+    function _deployStateOracle(address daVerifier, uint128 timelockBlocks, string memory contractName)
+        internal
+        virtual
+        returns (address)
+    {
         address stateOracle = address(new StateOracle(timelockBlocks, daVerifier));
-        console2.log("State Oracle Implementation deployed at", stateOracle);
+        console2.log(string.concat(contractName, " Implementation deployed at"), stateOracle);
         return stateOracle;
     }
 
