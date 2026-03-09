@@ -28,11 +28,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. DAVerifierOnChain contract implements IDAVerifier and returns true when keccak256(proof) == assertionId, false otherwise
   3. DAVerifierOnChain.verifyDA is pure or view with no state changes and no external calls
   4. Unit tests cover registry add/remove/isRegistered and verifier accept/reject cases, all passing via forge test
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+- [ ] 01-01-PLAN.md — DAVerifierRegistry library with unit tests (R1)
+- [ ] 01-02-PLAN.md — DAVerifierOnChain contract with unit tests (R11, R12)
 
 ### Phase 2: StateOracle Integration
 **Goal**: StateOracle supports a governance-managed DA verifier registry where managers choose a registered DA verifier per-assertion, with the extended AssertionAdded event emitting proof data
@@ -115,7 +115,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. DAVerifierRegistry Library + DAVerifierOnChain | 0/? | Not started | - |
+| 1. DAVerifierRegistry Library + DAVerifierOnChain | 0/2 | Planned | - |
 | 2. StateOracle Integration | 0/? | Not started | - |
 | 3. Deployment Scripts + Integration Tests | 0/? | Not started | - |
 | 4. Documentation + ABI Artifacts | 0/? | Not started | - |
