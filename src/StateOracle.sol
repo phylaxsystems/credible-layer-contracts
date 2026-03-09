@@ -7,6 +7,7 @@ import {Batch} from "./Batch.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Initializable} from "solady/utils/Initializable.sol";
 import {AdminVerifierRegistry} from "./lib/AdminVerifierRegistry.sol";
+import {DAVerifierRegistry} from "./lib/DAVerifierRegistry.sol";
 import {StateOracleAccessControl} from "./StateOracleAccessControl.sol";
 
 /// @title StateOracle
@@ -16,12 +17,10 @@ import {StateOracleAccessControl} from "./StateOracleAccessControl.sol";
 
 contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     using AdminVerifierRegistry for mapping(IAdminVerifier adminVerifier => bool isRegistered);
+    using DAVerifierRegistry for mapping(IDAVerifier daVerifier => bool isRegistered);
 
     /// @notice Number of blocks to wait before an assertion becomes active or inactive
     uint128 public immutable ASSERTION_TIMELOCK_BLOCKS;
-
-    /// @notice The DA verifier
-    IDAVerifier public immutable DA_VERIFIER;
 
     /// @notice Thrown when an unauthorized address attempts to register an assertion adopter
     error UnauthorizedRegistrant();
@@ -37,8 +36,11 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     error AssertionAlreadyExists();
     /// @notice Thrown when attempting to remove or modify a non-existent assertion
     error AssertionDoesNotExist();
-    /// @notice Thrown when the provided proof is invalid
-    error InvalidProof();
+    /// @notice Thrown when the DA verifier is not registered
+    error DAVerifierNotRegistered();
+    /// @notice Thrown when the provided DA proof is invalid
+    /// @param daVerifier The DA verifier that rejected the proof
+    error InvalidDAProof(IDAVerifier daVerifier);
     /// @notice Thrown when attempting to set an invalid assertion timelock value
     error InvalidAssertionTimelock();
     /// @notice Thrown when attempting to add more assertions than the maximum allowed
@@ -96,14 +98,24 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @notice Emitted when a new assertion is added
     /// @param assertionAdopter The assertion adopter the assertion is associated with
     /// @param assertionId The unique identifier of the assertion
+    /// @param daVerifier The DA verifier used to verify the proof
     /// @param activationBlock The block number when the assertion becomes active
-    event AssertionAdded(address assertionAdopter, bytes32 assertionId, uint256 activationBlock);
+    /// @param metadata The metadata used for verification
+    /// @param proof The proof used for verification
+    event AssertionAdded(
+        address indexed assertionAdopter,
+        bytes32 indexed assertionId,
+        IDAVerifier indexed daVerifier,
+        uint256 activationBlock,
+        bytes metadata,
+        bytes proof
+    );
 
     /// @notice Emitted when an assertion is removed
     /// @param assertionAdopter The assertion adopter where the assertion is removed from
     /// @param assertionId The unique identifier of the removed assertion
     /// @param deactivationBlock The block number when the assertion is going to be inactive
-    event AssertionRemoved(address assertionAdopter, bytes32 assertionId, uint256 deactivationBlock);
+    event AssertionRemoved(address indexed assertionAdopter, bytes32 indexed assertionId, uint256 deactivationBlock);
 
     /// @notice Emitted when the whitelist is enabled
     event WhitelistEnabled();
@@ -147,6 +159,9 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @notice Maximum number of assertions per assertion adopter
     uint16 public maxAssertionsPerAA;
 
+    /// @notice The DA verification registry
+    mapping(IDAVerifier daVerifier => bool isRegistered) public daVerifiers;
+
     /// @notice Internal function to ensure caller is whitelisted when whitelist is enabled
     function _onlyWhitelisted() internal view {
         require(!whitelistEnabled || whitelist[msg.sender], NotWhitelisted());
@@ -162,11 +177,9 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
 
     /// @notice Initializes the contract with a timelock period
     /// @param assertionTimelockBlocks Number of blocks to wait before assertions become active/inactive
-    /// @param daVerifier The address of the DA verifier
-    constructor(uint128 assertionTimelockBlocks, address daVerifier) Ownable(msg.sender) {
+    constructor(uint128 assertionTimelockBlocks) Ownable(msg.sender) {
         require(assertionTimelockBlocks > 0, InvalidAssertionTimelock());
         ASSERTION_TIMELOCK_BLOCKS = assertionTimelockBlocks;
-        DA_VERIFIER = IDAVerifier(daVerifier);
         renounceOwnership();
         _disableInitializers();
     }
@@ -174,16 +187,22 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @notice Initializes the contract
     /// @param admin The address of the admin
     /// @param _adminVerifiers The admin verifiers to add
+    /// @param _daVerifiers The DA verifiers to add
     /// @param _maxAssertionsPerAA Maximum number of assertions per assertion adopter
-    function initialize(address admin, IAdminVerifier[] calldata _adminVerifiers, uint16 _maxAssertionsPerAA)
-        external
-        initializer
-    {
+    function initialize(
+        address admin,
+        IAdminVerifier[] calldata _adminVerifiers,
+        IDAVerifier[] calldata _daVerifiers,
+        uint16 _maxAssertionsPerAA
+    ) external initializer {
         _initializeRoles(admin);
 
         whitelistEnabled = true;
         for (uint256 i = 0; i < _adminVerifiers.length; i++) {
             _addAdminVerifier(_adminVerifiers[i]);
+        }
+        for (uint256 i = 0; i < _daVerifiers.length; i++) {
+            _addDAVerifier(_daVerifiers[i]);
         }
         _setMaxAssertionsPerAA(_maxAssertionsPerAA);
     }
@@ -207,22 +226,26 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @dev An assertion ID can be added only once. If removed (inactive),
     /// it cannot be re-added - attempting to reuse the same ID will revert.
     /// @param contractAddress The address of the assertion adopter
+    /// @param daVerifier The DA verifier to use for proof verification
     /// @param assertionId The unique identifier for the assertion
-    /// @param proof The data availability proof for the assertion
     /// @param metadata Needed to verify the proof
-    function addAssertion(address contractAddress, bytes32 assertionId, bytes calldata metadata, bytes calldata proof)
-        external
-        onlyManager(contractAddress)
-        onlyWhitelisted
-    {
+    /// @param proof The data availability proof for the assertion
+    function addAssertion(
+        address contractAddress,
+        IDAVerifier daVerifier,
+        bytes32 assertionId,
+        bytes calldata metadata,
+        bytes calldata proof
+    ) external onlyManager(contractAddress) onlyWhitelisted {
         require(!hasAssertion(contractAddress, assertionId), AssertionAlreadyExists());
-        require(DA_VERIFIER.verifyDA(assertionId, metadata, proof), InvalidProof());
+        require(daVerifiers.isRegistered(daVerifier), DAVerifierNotRegistered());
+        require(daVerifier.verifyDA(assertionId, metadata, proof), InvalidDAProof(daVerifier));
         require(assertionAdopters[contractAddress].assertionCount < maxAssertionsPerAA, TooManyAssertions());
 
-        assertionAdopters[contractAddress].assertions[assertionId].activationBlock =
-            uint128(block.number) + ASSERTION_TIMELOCK_BLOCKS;
+        uint256 activationBlock = uint256(block.number) + ASSERTION_TIMELOCK_BLOCKS;
+        assertionAdopters[contractAddress].assertions[assertionId].activationBlock = uint128(activationBlock);
         assertionAdopters[contractAddress].assertionCount++;
-        emit AssertionAdded(contractAddress, assertionId, uint256(block.number + ASSERTION_TIMELOCK_BLOCKS));
+        emit AssertionAdded(contractAddress, assertionId, daVerifier, activationBlock, metadata, proof);
     }
 
     /// @notice Removes an assertion from an assertion adopter
@@ -393,6 +416,31 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @return isRegistered True if the admin verifier is registered, false otherwise
     function isAdminVerifierRegistered(IAdminVerifier adminVerifier) public view returns (bool isRegistered) {
         return adminVerifiers.isRegistered(adminVerifier);
+    }
+
+    /// @notice Adds a DA verifier to the registry
+    /// @param daVerifier The DA verifier to add
+    function addDAVerifier(IDAVerifier daVerifier) external onlyGovernance {
+        _addDAVerifier(daVerifier);
+    }
+
+    /// @notice Internal function to add a DA verifier
+    /// @param daVerifier The DA verifier to add
+    function _addDAVerifier(IDAVerifier daVerifier) internal {
+        daVerifiers.add(daVerifier);
+    }
+
+    /// @notice Removes a DA verifier from the registry
+    /// @param daVerifier The DA verifier to remove
+    function removeDAVerifier(IDAVerifier daVerifier) external onlyGovernance {
+        daVerifiers.remove(daVerifier);
+    }
+
+    /// @notice Checks if a DA verifier is registered
+    /// @param daVerifier The DA verifier to check
+    /// @return isRegistered True if the DA verifier is registered, false otherwise
+    function isDAVerifierRegistered(IDAVerifier daVerifier) public view returns (bool isRegistered) {
+        return daVerifiers.isRegistered(daVerifier);
     }
 
     /// @notice Sets the maximum number of assertions per assertion adopter
