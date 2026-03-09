@@ -47,12 +47,11 @@ Plans:
   6. IDAVerifier interface (verifyDA signature) is unchanged from existing code
   7. Storage layout is append-only (new mapping after maxAssertionsPerAA), validated by forge inspect comparison showing no reordering
   8. DA_VERIFIER immutable is removed from constructor; constructor takes only assertionTimelockBlocks
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
-- [ ] 02-03: TBD
+- [ ] 02-01-PLAN.md — StateOracle contract changes + unit tests + compilation fixes (R2, R3, R4, R5, R6, R7, R8, R9, R10, R14)
+- [ ] 02-02-PLAN.md — Storage layout validation + integration test matrix (R8, R13, R15)
 
 ### Phase 3: Deployment Scripts + Integration Tests
 **Goal**: All deployment scripts deploy and configure the DA verifier registry, and integration tests validate the full upgrade path including post-upgrade registry population
@@ -116,6 +115,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. DAVerifierRegistry Library + DAVerifierOnChain | 2/2 | Complete | 2026-03-09 |
-| 2. StateOracle Integration | 0/? | Not started | - |
+| 2. StateOracle Integration | 0/2 | Not started | - |
 | 3. Deployment Scripts + Integration Tests | 0/? | Not started | - |
 | 4. Documentation + ABI Artifacts | 0/? | Not started | - |
