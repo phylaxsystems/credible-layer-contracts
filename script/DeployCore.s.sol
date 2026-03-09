@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {StateOracle} from "../src/StateOracle.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
+import {IDAVerifier} from "../src/interfaces/IDAVerifier.sol";
 import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.sol";
 import {DAVerifierECDSA} from "../src/verification/da/DAVerifierECDSA.sol";
 import {console2} from "forge-std/console2.sol";
@@ -61,9 +62,9 @@ contract DeployCore is Script {
         address[] memory adminVerifierDeployments = _deployAdminVerifiers();
 
         // Deploy State Oracle
-        address stateOracle = _deployStateOracle(daVerifier, assertionTimelockBlocks, "State Oracle");
+        address stateOracle = _deployStateOracle(assertionTimelockBlocks, "State Oracle");
         // Deploy State Oracle Proxy
-        _deployStateOracleProxy(stateOracle, adminVerifierDeployments, maxAssertionsPerAA);
+        _deployStateOracleProxy(stateOracle, adminVerifierDeployments, daVerifier, maxAssertionsPerAA);
     }
 
     function deployDAVerifier() public broadcast {
@@ -74,19 +75,17 @@ contract DeployCore is Script {
         _deployAdminVerifiers();
     }
 
-    function deployStateOracle(address daVerifier, uint128 timelockBlocks, string memory contractName)
-        public
-        broadcast
-    {
-        _deployStateOracle(daVerifier, timelockBlocks, contractName);
+    function deployStateOracle(uint128 timelockBlocks, string memory contractName) public broadcast {
+        _deployStateOracle(timelockBlocks, contractName);
     }
 
     function deployStateOracleProxy(
         address stateOracle,
         address[] memory adminVerifierDeployments,
+        address daVerifierAddress,
         uint16 maxAssertions
     ) public broadcast {
-        _deployStateOracleProxy(stateOracle, adminVerifierDeployments, maxAssertions);
+        _deployStateOracleProxy(stateOracle, adminVerifierDeployments, daVerifierAddress, maxAssertions);
     }
 
     function deployOwnerAdminVerifier() public broadcast {
@@ -121,12 +120,8 @@ contract DeployCore is Script {
         }
     }
 
-    function _deployStateOracle(address daVerifier, uint128 timelockBlocks, string memory contractName)
-        internal
-        virtual
-        returns (address)
-    {
-        address stateOracle = address(new StateOracle(timelockBlocks, daVerifier));
+    function _deployStateOracle(uint128 timelockBlocks, string memory contractName) internal virtual returns (address) {
+        address stateOracle = address(new StateOracle(timelockBlocks));
         console2.log(string.concat(contractName, " Implementation deployed at"), stateOracle);
         return stateOracle;
     }
@@ -134,14 +129,17 @@ contract DeployCore is Script {
     function _deployStateOracleProxy(
         address stateOracle,
         address[] memory adminVerifierDeployments,
+        address daVerifierAddress,
         uint16 maxAssertions
     ) internal virtual returns (address) {
         IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](adminVerifierDeployments.length);
         for (uint256 i = 0; i < adminVerifierDeployments.length; i++) {
             adminVerifiers[i] = IAdminVerifier(adminVerifierDeployments[i]);
         }
+        IDAVerifier[] memory daVfrs = new IDAVerifier[](1);
+        daVfrs[0] = IDAVerifier(daVerifierAddress);
         bytes memory initCallData =
-            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, maxAssertions);
+            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, daVfrs, maxAssertions);
         address proxyAddress = address(new TransparentUpgradeableProxy(address(stateOracle), admin, initCallData));
         console2.log("State Oracle Proxy deployed at", proxyAddress);
         return proxyAddress;

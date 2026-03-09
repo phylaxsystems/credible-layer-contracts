@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {CALLER_ADDRESS, ASSERTION_CONTRACT_ADDRESS, PRECOMPILE_ADDRESS} from "../../script/DeployCore.s.sol";
 import {StateOracle} from "../../src/StateOracle.sol";
 import {IAdminVerifier} from "../../src/interfaces/IAdminVerifier.sol";
+import {IDAVerifier} from "../../src/interfaces/IDAVerifier.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {AdminVerifierOwner} from "../../src/verification/admin/AdminVerifierOwner.sol";
 import {DAVerifierECDSA} from "../../src/verification/da/DAVerifierECDSA.sol";
@@ -36,22 +37,25 @@ contract DeployCoreWithStagingIntegrationTest is Test {
         IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
         verifiers[0] = adminVerifier;
 
+        IDAVerifier[] memory daVfrs = new IDAVerifier[](1);
+        daVfrs[0] = IDAVerifier(address(daVerifier));
+
         // Deploy production oracle
-        StateOracle prodImpl = new StateOracle(100, address(daVerifier));
+        StateOracle prodImpl = new StateOracle(100);
         productionOracle = StateOracle(
             address(
                 new TransparentUpgradeableProxy(
-                    address(prodImpl), admin, abi.encodeCall(StateOracle.initialize, (admin, verifiers, 10))
+                    address(prodImpl), admin, abi.encodeCall(StateOracle.initialize, (admin, verifiers, daVfrs, 10))
                 )
             )
         );
 
         // Deploy staging oracle
-        StateOracle stagingImpl = new StateOracle(10, address(daVerifier));
+        StateOracle stagingImpl = new StateOracle(10);
         stagingOracle = StateOracle(
             address(
                 new TransparentUpgradeableProxy(
-                    address(stagingImpl), admin, abi.encodeCall(StateOracle.initialize, (admin, verifiers, 5))
+                    address(stagingImpl), admin, abi.encodeCall(StateOracle.initialize, (admin, verifiers, daVfrs, 5))
                 )
             )
         );

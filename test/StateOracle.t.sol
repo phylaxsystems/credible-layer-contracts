@@ -9,8 +9,10 @@ import {DAVerifierMock} from "./utils/DAVerifierMock.sol";
 import {ProxyHelper} from "./utils/ProxyHelper.t.sol";
 import {Initializable} from "solady/utils/Initializable.sol";
 import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
+import {IDAVerifier} from "../src/interfaces/IDAVerifier.sol";
 import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.sol";
 import {AdminVerifierRegistry} from "../src/lib/AdminVerifierRegistry.sol";
+import {DAVerifierRegistry} from "../src/lib/DAVerifierRegistry.sol";
 
 contract StateOracleBase is Test, ProxyHelper {
     address constant OWNER = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.OWNER")))));
@@ -22,6 +24,7 @@ contract StateOracleBase is Test, ProxyHelper {
     uint16 constant MAX_ASSERTIONS_PER_AA = 5;
     StateOracle stateOracle;
     IAdminVerifier adminVerifier;
+    IDAVerifier daVerifierMock;
 
     /// @notice Modifier to ensure the address is not the proxy admin
     /// @param _address The address to check
@@ -32,14 +35,17 @@ contract StateOracleBase is Test, ProxyHelper {
     }
 
     function setUp() public virtual {
-        DAVerifierMock daVerifier = new DAVerifierMock();
-        StateOracle implementation = new StateOracle(TIMEOUT, address(daVerifier));
+        DAVerifierMock _daVerifierMock = new DAVerifierMock();
+        daVerifierMock = IDAVerifier(address(_daVerifierMock));
+        StateOracle implementation = new StateOracle(TIMEOUT);
         adminVerifier = IAdminVerifier(new AdminVerifierOwner());
         IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
         verifiers[0] = adminVerifier;
+        IDAVerifier[] memory daVerifiers = new IDAVerifier[](1);
+        daVerifiers[0] = daVerifierMock;
 
         bytes memory data = abi.encodeWithSelector(
-            StateOracle.initialize.selector, STATE_ORACLE_ADMIN, verifiers, MAX_ASSERTIONS_PER_AA
+            StateOracle.initialize.selector, STATE_ORACLE_ADMIN, verifiers, daVerifiers, MAX_ASSERTIONS_PER_AA
         );
         stateOracle = StateOracle(deployProxy(address(implementation), data));
 
@@ -63,7 +69,7 @@ contract StateOracleBase is Test, ProxyHelper {
 
     function addAssertionAndAssert(address manager, address adopter, bytes32 assertionId) internal noAdmin(manager) {
         vm.prank(manager);
-        stateOracle.addAssertion(adopter, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(adopter, daVerifierMock, assertionId, new bytes(0), new bytes(0));
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion not found");
         (uint128 activationBlock, uint128 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
@@ -78,27 +84,27 @@ contract StateOracleBase is Test, ProxyHelper {
 
 contract Constructor is StateOracleBase {
     function test_assertionTimelockZero() public {
-        DAVerifierMock daVerifier = new DAVerifierMock();
         vm.expectRevert(StateOracle.InvalidAssertionTimelock.selector);
-        stateOracle = new StateOracle(0, address(daVerifier));
+        stateOracle = new StateOracle(0);
     }
 }
 
 contract Initialize is StateOracleBase {
     function test_RevertIf_alreadyInitialized() public {
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        stateOracle.initialize(OWNER, new IAdminVerifier[](0), MAX_ASSERTIONS_PER_AA);
+        stateOracle.initialize(OWNER, new IAdminVerifier[](0), new IDAVerifier[](0), MAX_ASSERTIONS_PER_AA);
     }
 
     function test_RevertIf_initializeNonProxy() public {
-        DAVerifierMock daVerifier = new DAVerifierMock();
-        stateOracle = new StateOracle(TIMEOUT, address(daVerifier));
+        stateOracle = new StateOracle(TIMEOUT);
         assertEq(stateOracle.owner(), address(0), "Owner should be address(0)");
         adminVerifier = IAdminVerifier(new AdminVerifierOwner());
         IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
         verifiers[0] = adminVerifier;
+        IDAVerifier[] memory daVerifiers = new IDAVerifier[](1);
+        daVerifiers[0] = daVerifierMock;
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        stateOracle.initialize(STATE_ORACLE_ADMIN, verifiers, MAX_ASSERTIONS_PER_AA);
+        stateOracle.initialize(STATE_ORACLE_ADMIN, verifiers, daVerifiers, MAX_ASSERTIONS_PER_AA);
     }
 }
 
@@ -163,7 +169,7 @@ contract AddAssertion is StateOracleBase {
         vm.assume(unauthorizedManager != manager);
         vm.prank(unauthorizedManager);
         vm.expectRevert(StateOracleAccessControl.UnauthorizedManager.selector);
-        stateOracle.addAssertion(adopter, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(adopter, daVerifierMock, assertionId, new bytes(0), new bytes(0));
     }
 
     function testFuzz_RevertIf_addDuplicateAssertion(bytes32 assertionId) public {
@@ -172,7 +178,7 @@ contract AddAssertion is StateOracleBase {
 
         vm.prank(manager);
         vm.expectRevert(StateOracle.AssertionAlreadyExists.selector);
-        stateOracle.addAssertion(adopter, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(adopter, daVerifierMock, assertionId, new bytes(0), new bytes(0));
     }
 
     function testFuzz_addMultipleAssertions(bytes32 assertionId1, bytes32 assertionId2) public {
@@ -185,15 +191,17 @@ contract AddAssertion is StateOracleBase {
     function testFuzz_RevertIf_addAssertionNotRegistered(address adopter, bytes32 assertionId) public {
         vm.prank(address(1));
         vm.expectRevert(StateOracle.AssertionAdopterNotRegistered.selector);
-        stateOracle.addAssertion(adopter, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(adopter, daVerifierMock, assertionId, new bytes(0), new bytes(0));
     }
 
     function testFuzz_expectAssertionAdded(bytes32 assertionId) public {
         (address adopter, address manager) = registerAssertionAdopter();
-        uint128 activationBlock = uint128(block.number) + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
-        // Check topic1: adopter, topic2: assertionId, data: activationBlock and emitting address
-        vm.expectEmit(true, true, false, true, address(stateOracle));
-        emit StateOracle.AssertionAdded(adopter, assertionId, activationBlock);
+        uint256 activationBlock = uint256(block.number) + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
+        // Check topic1: adopter, topic2: assertionId, topic3: daVerifier, data: activationBlock, metadata, proof
+        vm.expectEmit(true, true, true, true, address(stateOracle));
+        emit StateOracle.AssertionAdded(
+            adopter, assertionId, daVerifierMock, activationBlock, new bytes(0), new bytes(0)
+        );
         addAssertionAndAssert(manager, adopter, assertionId);
     }
 
@@ -205,11 +213,19 @@ contract AddAssertion is StateOracleBase {
         }
         vm.startPrank(manager);
         vm.expectRevert(StateOracle.TooManyAssertions.selector);
-        stateOracle.addAssertion(adopter, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(adopter, daVerifierMock, assertionId, new bytes(0), new bytes(0));
         stateOracle.removeAssertion(adopter, bytes32(uint256(MAX_ASSERTIONS_PER_AA - 1)));
         vm.stopPrank();
 
         addAssertionAndAssert(manager, adopter, assertionId);
+    }
+
+    function test_RevertIf_addAssertionWithUnregisteredDAVerifier() public {
+        (address adopter, address manager) = registerAssertionAdopter();
+        IDAVerifier unregisteredVerifier = IDAVerifier(address(0x9999));
+        vm.prank(manager);
+        vm.expectRevert(StateOracle.DAVerifierNotRegistered.selector);
+        stateOracle.addAssertion(adopter, unregisteredVerifier, bytes32(uint256(1)), new bytes(0), new bytes(0));
     }
 }
 
@@ -567,6 +583,89 @@ contract RemoveAdminVerifier is StateOracleBase {
     }
 }
 
+contract AddDAVerifier is StateOracleBase {
+    function test_addDAVerifier(IDAVerifier _daVerifier) public {
+        vm.assume(address(_daVerifier) != address(0));
+        vm.assume(_daVerifier != daVerifierMock);
+        assertEq(stateOracle.daVerifiers(_daVerifier), false, "DA verifier should not have been added");
+        vm.prank(STATE_ORACLE_ADMIN);
+        stateOracle.addDAVerifier(_daVerifier);
+        assertEq(stateOracle.daVerifiers(_daVerifier), true, "DA verifier should be added");
+        assertTrue(stateOracle.isDAVerifierRegistered(_daVerifier), "isDAVerifierRegistered should return true");
+    }
+
+    function testFuzz_RevertIf_addDAVerifierByUnauthorized(address unauthorizedAdmin)
+        public
+        noAdmin(unauthorizedAdmin)
+    {
+        vm.assume(unauthorizedAdmin != stateOracle.owner());
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.assume(!stateOracle.hasRole(governanceRole, unauthorizedAdmin));
+        IDAVerifier _daVerifier = IDAVerifier(address(0x1234));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                unauthorizedAdmin,
+                governanceRole
+            )
+        );
+        vm.prank(unauthorizedAdmin);
+        stateOracle.addDAVerifier(_daVerifier);
+    }
+
+    function testFuzz_RevertIf_addDAVerifierTwice(IDAVerifier _daVerifier) public {
+        vm.assume(_daVerifier != daVerifierMock);
+        vm.assume(address(_daVerifier) != address(0));
+        vm.startPrank(STATE_ORACLE_ADMIN);
+        stateOracle.addDAVerifier(_daVerifier);
+        vm.expectRevert(DAVerifierRegistry.DAVerifierAlreadyRegistered.selector);
+        stateOracle.addDAVerifier(_daVerifier);
+        vm.stopPrank();
+    }
+}
+
+contract RemoveDAVerifier is StateOracleBase {
+    function test_removeDAVerifier() public {
+        IDAVerifier _daVerifier = IDAVerifier(address(0x1234));
+        vm.startPrank(STATE_ORACLE_ADMIN);
+        stateOracle.addDAVerifier(_daVerifier);
+        assertEq(stateOracle.daVerifiers(_daVerifier), true, "DA verifier should have been added");
+        stateOracle.removeDAVerifier(_daVerifier);
+        vm.stopPrank();
+        assertEq(stateOracle.daVerifiers(_daVerifier), false, "DA verifier should have been removed");
+        assertFalse(stateOracle.isDAVerifierRegistered(_daVerifier), "isDAVerifierRegistered should return false");
+    }
+
+    function testFuzz_RevertIf_removeDAVerifierByUnauthorized(address unauthorizedAdmin)
+        public
+        noAdmin(unauthorizedAdmin)
+    {
+        vm.assume(unauthorizedAdmin != stateOracle.owner());
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.assume(!stateOracle.hasRole(governanceRole, unauthorizedAdmin));
+        IDAVerifier _daVerifier = IDAVerifier(address(0x1234));
+        vm.prank(STATE_ORACLE_ADMIN);
+        stateOracle.addDAVerifier(_daVerifier);
+        assertEq(stateOracle.daVerifiers(_daVerifier), true, "DA verifier should have been added");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                unauthorizedAdmin,
+                governanceRole
+            )
+        );
+        vm.prank(unauthorizedAdmin);
+        stateOracle.removeDAVerifier(_daVerifier);
+    }
+
+    function testFuzz_RevertIf_removeDAVerifierNotRegistered(IDAVerifier _daVerifier) public {
+        vm.assume(_daVerifier != daVerifierMock);
+        vm.prank(STATE_ORACLE_ADMIN);
+        vm.expectRevert(DAVerifierRegistry.DAVerifierNotRegistered.selector);
+        stateOracle.removeDAVerifier(_daVerifier);
+    }
+}
+
 contract Batch is StateOracleBase {
     function test_batch(bytes32 assertionId1, bytes32 assertionId2) public {
         vm.assume(assertionId1 != assertionId2);
@@ -577,10 +676,10 @@ contract Batch is StateOracleBase {
         calls[0] =
             abi.encodeWithSelector(StateOracle.registerAssertionAdopter.selector, adopter, adminVerifier, new bytes(0));
         calls[1] = abi.encodeWithSelector(
-            StateOracle.addAssertion.selector, adopter, assertionId1, new bytes(0), new bytes(0)
+            StateOracle.addAssertion.selector, adopter, daVerifierMock, assertionId1, new bytes(0), new bytes(0)
         );
         calls[2] = abi.encodeWithSelector(
-            StateOracle.addAssertion.selector, adopter, assertionId2, new bytes(0), new bytes(0)
+            StateOracle.addAssertion.selector, adopter, daVerifierMock, assertionId2, new bytes(0), new bytes(0)
         );
 
         vm.prank(OWNER);
@@ -652,7 +751,7 @@ contract SetMaxAssertionsPerAA is StateOracleBase {
         bytes32 newAssertionId = keccak256("newAssertion");
         vm.prank(OWNER);
         vm.expectRevert(StateOracle.TooManyAssertions.selector);
-        stateOracle.addAssertion(adopter, newAssertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(adopter, daVerifierMock, newAssertionId, new bytes(0), new bytes(0));
     }
 }
 
@@ -952,7 +1051,7 @@ contract AddAssertionWithWhitelist is WhitelistBase {
 
         // USER1 adds assertion
         vm.prank(USER1);
-        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
 
         assertTrue(stateOracle.hasAssertion(address(adopter), assertionId), "Assertion should be added");
     }
@@ -975,7 +1074,7 @@ contract AddAssertionWithWhitelist is WhitelistBase {
         // USER1 tries to add assertion but is not whitelisted
         vm.prank(USER1);
         vm.expectRevert(StateOracle.NotWhitelisted.selector);
-        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
     }
 
     function test_addAssertionWhenWhitelistDisabled() public {
@@ -993,7 +1092,7 @@ contract AddAssertionWithWhitelist is WhitelistBase {
 
         // USER1 adds assertion
         vm.prank(USER1);
-        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
 
         assertTrue(stateOracle.hasAssertion(address(adopter), assertionId), "Assertion should be added");
     }
@@ -1014,7 +1113,7 @@ contract RemoveAssertionWithWhitelist is WhitelistBase {
 
         // USER1 adds assertion
         vm.prank(USER1);
-        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
 
         // Remove USER1 from whitelist
         vm.prank(STATE_ORACLE_ADMIN);
@@ -1181,7 +1280,7 @@ contract OwnerOnlyFunctionsRemainProtected is OperatorRoleBase {
         OwnableAdopter adopter = new OwnableAdopter(USER1);
         stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
         bytes32 assertionId = keccak256("assertion1");
-        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
         vm.stopPrank();
 
         vm.roll(block.number + 1);
@@ -1194,6 +1293,30 @@ contract OwnerOnlyFunctionsRemainProtected is OperatorRoleBase {
             )
         );
         stateOracle.removeAssertionByGuardian(address(adopter), assertionId);
+    }
+
+    function test_operatorCannotAddDAVerifier() public {
+        IDAVerifier newVerifier = IDAVerifier(address(0x1234));
+
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(OPERATOR);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), OPERATOR, governanceRole
+            )
+        );
+        stateOracle.addDAVerifier(newVerifier);
+    }
+
+    function test_operatorCannotRemoveDAVerifier() public {
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(OPERATOR);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), OPERATOR, governanceRole
+            )
+        );
+        stateOracle.removeDAVerifier(daVerifierMock);
     }
 
     function test_operatorCannotRevokeManager() public {
@@ -1322,7 +1445,7 @@ contract GuardianEmergencyActions is GuardianRoleBase {
         OwnableAdopter adopter = new OwnableAdopter(USER1);
         stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
         bytes32 assertionId = keccak256("assertion1");
-        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
         vm.stopPrank();
 
         (uint128 activationBlockBefore,) = stateOracle.getAssertionWindow(address(adopter), assertionId);
@@ -1452,6 +1575,30 @@ contract GuardianEmergencyActions is GuardianRoleBase {
         );
         stateOracle.removeAdminVerifier(adminVerifier);
     }
+
+    function test_guardianCannotAddDAVerifier() public {
+        IDAVerifier newVerifier = IDAVerifier(address(0x1234));
+
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(GUARDIAN);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), GUARDIAN, governanceRole
+            )
+        );
+        stateOracle.addDAVerifier(newVerifier);
+    }
+
+    function test_guardianCannotRemoveDAVerifier() public {
+        bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
+        vm.prank(GUARDIAN);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), GUARDIAN, governanceRole
+            )
+        );
+        stateOracle.removeDAVerifier(daVerifierMock);
+    }
 }
 
 contract OperatorAdminCanManageOperators is OperatorRoleBase {
@@ -1561,7 +1708,7 @@ contract OperatorAdminCanManageOperators is OperatorRoleBase {
         OwnableAdopter adopter = new OwnableAdopter(USER1);
         stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
         bytes32 assertionId = keccak256("assertion1");
-        stateOracle.addAssertion(address(adopter), assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
         vm.stopPrank();
 
         vm.roll(block.number + 1);

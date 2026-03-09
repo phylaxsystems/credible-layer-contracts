@@ -7,6 +7,7 @@ import {DAVerifierMock} from "./utils/DAVerifierMock.sol";
 import {ProxyHelper} from "./utils/ProxyHelper.t.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
+import {IDAVerifier} from "../src/interfaces/IDAVerifier.sol";
 import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.sol";
 
 /// @title StateOracleAccessControl Tests
@@ -29,13 +30,15 @@ contract StateOracleAccessControlBase is Test, ProxyHelper {
 
     function setUp() public virtual {
         DAVerifierMock daVerifier = new DAVerifierMock();
-        StateOracle implementation = new StateOracle(TIMEOUT, address(daVerifier));
+        StateOracle implementation = new StateOracle(TIMEOUT);
         adminVerifier = IAdminVerifier(new AdminVerifierOwner());
         IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
         verifiers[0] = adminVerifier;
+        IDAVerifier[] memory daVerifiers = new IDAVerifier[](1);
+        daVerifiers[0] = IDAVerifier(address(daVerifier));
 
         bytes memory data = abi.encodeWithSelector(
-            StateOracle.initialize.selector, STATE_ORACLE_ADMIN, verifiers, MAX_ASSERTIONS_PER_AA
+            StateOracle.initialize.selector, STATE_ORACLE_ADMIN, verifiers, daVerifiers, MAX_ASSERTIONS_PER_AA
         );
         stateOracle = StateOracle(deployProxy(address(implementation), data));
 
@@ -47,8 +50,7 @@ contract StateOracleAccessControlBase is Test, ProxyHelper {
 
 contract OwnableTest is StateOracleAccessControlBase {
     function test_ownerIsZeroOnImplementation() public {
-        DAVerifierMock daVerifier = new DAVerifierMock();
-        StateOracle implementation = new StateOracle(TIMEOUT, address(daVerifier));
+        StateOracle implementation = new StateOracle(TIMEOUT);
         assertEq(implementation.owner(), address(0), "implementation owner should be zero");
     }
 

@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {StateOracle} from "../src/StateOracle.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
+import {IDAVerifier} from "../src/interfaces/IDAVerifier.sol";
 import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.sol";
 import {AdminVerifierWhitelist} from "../src/verification/admin/AdminVerifierWhitelist.sol";
 import {DAVerifierECDSA} from "../src/verification/da/DAVerifierECDSA.sol";
@@ -43,14 +44,14 @@ contract DeployCoreWithCreateX is DeployCore {
         return verifier;
     }
 
-    function _deployStateOracle(address daVerifier, uint128 assertionTimelockBlocks, string memory contractName)
+    function _deployStateOracle(uint128 assertionTimelockBlocks, string memory contractName)
         internal
         override
         returns (address)
     {
         address stateOracle = deployCreate3(
             SALT_STATE_ORACLE_NAME,
-            abi.encodePacked(type(StateOracle).creationCode, abi.encode(assertionTimelockBlocks, daVerifier))
+            abi.encodePacked(type(StateOracle).creationCode, abi.encode(assertionTimelockBlocks))
         );
         console2.log(string.concat(contractName, " Implementation deployed at"), stateOracle);
         return stateOracle;
@@ -59,14 +60,17 @@ contract DeployCoreWithCreateX is DeployCore {
     function _deployStateOracleProxy(
         address stateOracle,
         address[] memory adminVerifierDeployments,
+        address daVerifierAddress,
         uint16 maxAssertions
     ) internal override returns (address) {
         IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](adminVerifierDeployments.length);
         for (uint256 i = 0; i < adminVerifierDeployments.length; i++) {
             adminVerifiers[i] = IAdminVerifier(adminVerifierDeployments[i]);
         }
+        IDAVerifier[] memory daVfrs = new IDAVerifier[](1);
+        daVfrs[0] = IDAVerifier(daVerifierAddress);
         bytes memory initCallData =
-            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, maxAssertions);
+            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, daVfrs, maxAssertions);
         address proxyAddress = deployCreate3(
             SALT_STATE_ORACLE_PROXY_NAME,
             abi.encodePacked(
