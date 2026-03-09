@@ -34,11 +34,10 @@ contract DAVerifierOnChainTest is Test {
         );
     }
 
-    function testFuzz_verifyDA_metadataIgnored(
-        bytes calldata proof,
-        bytes calldata metadata1,
-        bytes calldata metadata2
-    ) public view {
+    function testFuzz_verifyDA_metadataIgnored(bytes calldata proof, bytes calldata metadata1, bytes calldata metadata2)
+        public
+        view
+    {
         bytes32 assertionId = keccak256(proof);
         bool result1 = verifier.verifyDA(assertionId, metadata1, proof);
         bool result2 = verifier.verifyDA(assertionId, metadata2, proof);
