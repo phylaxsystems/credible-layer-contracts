@@ -12,7 +12,7 @@ This milestone replaces the single immutable DA_VERIFIER in StateOracle with a g
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: DAVerifierRegistry Library + DAVerifierOnChain** - Build independent library and on-chain verifier with full unit tests
+- [x] **Phase 1: DAVerifierRegistry Library + DAVerifierOnChain** - Build independent library and on-chain verifier with full unit tests
 - [ ] **Phase 2: StateOracle Integration** - Integrate DA verifier registry, update addAssertion, extend event, add governance functions
 - [ ] **Phase 3: Deployment Scripts + Integration Tests** - Update all deployment scripts and validate full upgrade path
 - [ ] **Phase 4: Documentation + ABI Artifacts** - Update README and regenerate published ABI artifacts
@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — DAVerifierRegistry library with unit tests (R1)
+- [x] 01-01-PLAN.md — DAVerifierRegistry library with unit tests (R1)
 - [x] 01-02-PLAN.md — DAVerifierOnChain contract with unit tests (R11, R12)
 
 ### Phase 2: StateOracle Integration
@@ -115,7 +115,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. DAVerifierRegistry Library + DAVerifierOnChain | 1/2 | In Progress | - |
+| 1. DAVerifierRegistry Library + DAVerifierOnChain | 2/2 | Complete | 2026-03-09 |
 | 2. StateOracle Integration | 0/? | Not started | - |
 | 3. Deployment Scripts + Integration Tests | 0/? | Not started | - |
 | 4. Documentation + ABI Artifacts | 0/? | Not started | - |

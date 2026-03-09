@@ -92,7 +92,7 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| R1 | Phase 1 | Pending |
+| R1 | Phase 1 | Complete |
 | R2 | Phase 2 | Pending |
 | R3 | Phase 2 | Pending |
 | R4 | Phase 2 | Pending |
