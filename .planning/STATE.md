@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Phase 2 context gathered
-last_updated: "2026-03-09T16:57:02.966Z"
-last_activity: 2026-03-09 -- Completed 01-01-PLAN.md (DAVerifierRegistry library)
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-03-09T22:00:48.138Z"
+last_activity: 2026-03-09 -- Completed 02-01-PLAN.md (StateOracle DA verifier registry integration)
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 100
+  total_plans: 4
+  completed_plans: 3
+  percent: 75
 ---
 
 # Project State
@@ -21,35 +21,37 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-09)
 
 **Core value:** Assertion bytecode must be verifiably available -- whether through off-chain ECDSA proofs or on-chain event emission -- and the system must remain flexible about which DA mechanism each assertion uses.
-**Current focus:** Phase 1: DAVerifierRegistry Library + DAVerifierOnChain
+**Current focus:** Phase 2: StateOracle Integration
 
 ## Current Position
 
-Phase: 1 of 4 (DAVerifierRegistry Library + DAVerifierOnChain)
-Plan: 2 of 2 in current phase
-Status: Phase 1 complete
-Last activity: 2026-03-09 -- Completed 01-01-PLAN.md (DAVerifierRegistry library)
+Phase: 2 of 4 (StateOracle Integration)
+Plan: 1 of 2 in current phase
+Status: Plan 02-01 complete
+Last activity: 2026-03-09 -- Completed 02-01-PLAN.md (StateOracle DA verifier registry integration)
 
-Progress: [##########] 100% (Phase 1: 2/2 plans)
+Progress: [#######---] 75% (Phase 2: 1/2 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
-- Average duration: 2min
-- Total execution time: 0.07 hours
+- Total plans completed: 3
+- Average duration: 5min
+- Total execution time: 0.23 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 2 | 4min | 2min |
+| 02 | 1 | 9min | 9min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (2min), 01-02 (2min)
+- Last 5 plans: 01-01 (2min), 01-02 (2min), 02-01 (9min)
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 02 P01 | 9min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -65,6 +67,14 @@ Recent decisions affecting current work:
 - [01-02]: verifyDA marked pure (not view) since no state reads or external calls are needed
 - [01-02]: No constructor needed for DAVerifierOnChain -- contract is entirely stateless
 - [01-02]: Metadata parameter unnamed to match DAVerifierECDSA convention for unused params
+- [02-01]: DAVerifierNotRegistered is a StateOracle error, not reusing library error
+- [02-01]: Check order in addAssertion: hasAssertion, DAVerifierNotRegistered, verifyDA, TooManyAssertions
+- [02-01]: No try/catch around verifyDA -- verifier reverts bubble up
+- [02-01]: daVerifiers storage mapping placed after maxAssertionsPerAA to preserve storage layout
+- [Phase 02]: DAVerifierNotRegistered is a StateOracle error, not reusing library error
+- [Phase 02]: Check order in addAssertion: hasAssertion, DAVerifierNotRegistered, verifyDA, TooManyAssertions
+- [Phase 02]: No try/catch around verifyDA -- verifier reverts bubble up
+- [Phase 02]: daVerifiers storage mapping placed after maxAssertionsPerAA to preserve storage layout
 
 ### Pending Todos
 
@@ -72,13 +82,13 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Research]: Event indexing strategy for extended AssertionAdded needs validation during Phase 2 (which of daVerifier/metadata/proof to index)
 - [Research]: Storage gap (__gap) decision deferred to Phase 2 planning
-- [Research]: Batch call compatibility with new addAssertion signature needs verification in Phase 2
 - [Research]: Post-upgrade governance timing (registry population must be atomic with upgrade) -- addressed in Phase 3
+- [02-01]: Event indexing resolved -- daVerifier indexed in AssertionAdded, assertionAdopter and assertionId indexed in both events
+- [02-01]: Batch call compatibility verified -- batch test passes with new 5-param addAssertion
 
 ## Session Continuity
 
-Last session: 2026-03-09T16:57:02.964Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-stateoracle-integration/02-CONTEXT.md
+Last session: 2026-03-09T22:00:42.353Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: None

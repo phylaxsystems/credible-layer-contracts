@@ -93,19 +93,19 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | R1 | Phase 1 | Complete |
-| R2 | Phase 2 | Pending |
-| R3 | Phase 2 | Pending |
-| R4 | Phase 2 | Pending |
-| R5 | Phase 2 | Pending |
-| R6 | Phase 2 | Pending |
-| R7 | Phase 2 | Pending |
-| R8 | Phase 2 | Pending |
-| R9 | Phase 2 | Pending |
-| R10 | Phase 2 | Pending |
+| R2 | Phase 2 | Complete |
+| R3 | Phase 2 | Complete |
+| R4 | Phase 2 | Complete |
+| R5 | Phase 2 | Complete |
+| R6 | Phase 2 | Complete |
+| R7 | Phase 2 | Complete |
+| R8 | Phase 2 | Complete |
+| R9 | Phase 2 | Complete |
+| R10 | Phase 2 | Complete |
 | R11 | Phase 1 | Complete |
 | R12 | Phase 1 | Complete |
 | R13 | Phase 2 | Pending |
-| R14 | Phase 2 | Pending |
+| R14 | Phase 2 | Complete |
 | R15 | Phase 2 | Pending |
 | R16 | Phase 3 | Pending |
 | R17 | Phase 3 | Pending |
