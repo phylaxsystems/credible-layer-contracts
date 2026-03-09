@@ -102,8 +102,8 @@
 | R8 | Phase 2 | Pending |
 | R9 | Phase 2 | Pending |
 | R10 | Phase 2 | Pending |
-| R11 | Phase 1 | Pending |
-| R12 | Phase 1 | Pending |
+| R11 | Phase 1 | Complete |
+| R12 | Phase 1 | Complete |
 | R13 | Phase 2 | Pending |
 | R14 | Phase 2 | Pending |
 | R15 | Phase 2 | Pending |
