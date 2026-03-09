@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-03-09T22:00:48.138Z"
-last_activity: 2026-03-09 -- Completed 02-01-PLAN.md (StateOracle DA verifier registry integration)
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-03-09T22:05:22.000Z"
+last_activity: 2026-03-09 -- Completed 02-02-PLAN.md (Storage layout validation and integration test matrix)
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
-  percent: 75
+  completed_plans: 4
+  percent: 100
 ---
 
 # Project State
@@ -21,37 +21,38 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-09)
 
 **Core value:** Assertion bytecode must be verifiably available -- whether through off-chain ECDSA proofs or on-chain event emission -- and the system must remain flexible about which DA mechanism each assertion uses.
-**Current focus:** Phase 2: StateOracle Integration
+**Current focus:** Phase 2: StateOracle Integration (COMPLETE)
 
 ## Current Position
 
-Phase: 2 of 4 (StateOracle Integration)
-Plan: 1 of 2 in current phase
-Status: Plan 02-01 complete
-Last activity: 2026-03-09 -- Completed 02-01-PLAN.md (StateOracle DA verifier registry integration)
+Phase: 2 of 4 (StateOracle Integration) -- COMPLETE
+Plan: 2 of 2 in current phase
+Status: Phase 02 complete
+Last activity: 2026-03-09 -- Completed 02-02-PLAN.md (Storage layout validation and integration test matrix)
 
-Progress: [#######---] 75% (Phase 2: 1/2 plans)
+Progress: [##########] 100% (Phase 2: 2/2 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: 5min
-- Total execution time: 0.23 hours
+- Total execution time: 0.27 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 2 | 4min | 2min |
-| 02 | 1 | 9min | 9min |
+| 02 | 2 | 12min | 6min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (2min), 01-02 (2min), 02-01 (9min)
+- Last 5 plans: 01-01 (2min), 01-02 (2min), 02-01 (9min), 02-02 (3min)
 - Trend: -
 
 *Updated after each plan completion*
 | Phase 02 P01 | 9min | 2 tasks | 8 files |
+| Phase 02 P02 | 3min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,9 @@ Recent decisions affecting current work:
 - [Phase 02]: Check order in addAssertion: hasAssertion, DAVerifierNotRegistered, verifyDA, TooManyAssertions
 - [Phase 02]: No try/catch around verifyDA -- verifier reverts bubble up
 - [Phase 02]: daVerifiers storage mapping placed after maxAssertionsPerAA to preserve storage layout
+- [02-02]: Used _generateValidAssertion(bytes32 seed) pattern so ECDSA and OnChain verifiers share same test methods
+- [02-02]: StorageLayout tests use functional verification rather than raw slot reads for robustness
+- [02-02]: Added third StorageLayout test verifying DA verifier add/remove does not corrupt existing slots
 
 ### Pending Todos
 
@@ -89,6 +93,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-09T22:00:42.353Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-03-09T22:05:22Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
