@@ -20,6 +20,9 @@ contract DeployCoreWithStagingIntegrationTest is Test {
     StateOracle public productionOracle;
     StateOracle public stagingOracle;
     IAdminVerifier public adminVerifier;
+    DAVerifierECDSA public daVerifier;
+    DAVerifierOnChain public prodOnChainVerifier;
+    DAVerifierOnChain public stagingOnChainVerifier;
 
     function setUp() public {
         vm.deal(admin, 100 ether);
@@ -32,32 +35,36 @@ contract DeployCoreWithStagingIntegrationTest is Test {
         vm.startPrank(admin);
 
         // Deploy shared components
-        DAVerifierECDSA daVerifier = new DAVerifierECDSA(daProver);
+        daVerifier = new DAVerifierECDSA(daProver);
         adminVerifier = IAdminVerifier(address(new AdminVerifierOwner()));
 
-        IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
-        verifiers[0] = adminVerifier;
+        IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](1);
+        adminVerifiers[0] = adminVerifier;
 
-        // Deploy production oracle with per-oracle OnChain verifier
-        DAVerifierOnChain prodOnChain = new DAVerifierOnChain();
-        IDAVerifier[] memory prodDaVfrs = new IDAVerifier[](2);
-        prodDaVfrs[0] = IDAVerifier(address(daVerifier));
-        prodDaVfrs[1] = IDAVerifier(address(prodOnChain));
+        // Deploy per-oracle OnChain verifiers
+        prodOnChainVerifier = new DAVerifierOnChain();
+        stagingOnChainVerifier = new DAVerifierOnChain();
+
+        // Production oracle: shared ECDSA + production OnChain
+        IDAVerifier[] memory prodDAVfrs = new IDAVerifier[](2);
+        prodDAVfrs[0] = IDAVerifier(address(daVerifier));
+        prodDAVfrs[1] = IDAVerifier(address(prodOnChainVerifier));
 
         StateOracle prodImpl = new StateOracle(100);
         productionOracle = StateOracle(
             address(
                 new TransparentUpgradeableProxy(
-                    address(prodImpl), admin, abi.encodeCall(StateOracle.initialize, (admin, verifiers, prodDaVfrs, 10))
+                    address(prodImpl),
+                    admin,
+                    abi.encodeCall(StateOracle.initialize, (admin, adminVerifiers, prodDAVfrs, 10))
                 )
             )
         );
 
-        // Deploy staging oracle with per-oracle OnChain verifier
-        DAVerifierOnChain stagingOnChain = new DAVerifierOnChain();
-        IDAVerifier[] memory stagingDaVfrs = new IDAVerifier[](2);
-        stagingDaVfrs[0] = IDAVerifier(address(daVerifier));
-        stagingDaVfrs[1] = IDAVerifier(address(stagingOnChain));
+        // Staging oracle: shared ECDSA + staging OnChain
+        IDAVerifier[] memory stagingDAVfrs = new IDAVerifier[](2);
+        stagingDAVfrs[0] = IDAVerifier(address(daVerifier));
+        stagingDAVfrs[1] = IDAVerifier(address(stagingOnChainVerifier));
 
         StateOracle stagingImpl = new StateOracle(10);
         stagingOracle = StateOracle(
@@ -65,7 +72,7 @@ contract DeployCoreWithStagingIntegrationTest is Test {
                 new TransparentUpgradeableProxy(
                     address(stagingImpl),
                     admin,
-                    abi.encodeCall(StateOracle.initialize, (admin, verifiers, stagingDaVfrs, 5))
+                    abi.encodeCall(StateOracle.initialize, (admin, adminVerifiers, stagingDAVfrs, 5))
                 )
             )
         );
@@ -163,5 +170,63 @@ contract DeployCoreWithStagingIntegrationTest is Test {
             stagingOracle.isAdminVerifierRegistered(IAdminVerifier(adminVerifier)),
             "Admin verifier not registered on staging"
         );
+    }
+
+    function test_BothOraclesHaveBothDAVerifiers() public view {
+        assertTrue(productionOracle.isDAVerifierRegistered(IDAVerifier(address(daVerifier))));
+        assertTrue(productionOracle.isDAVerifierRegistered(IDAVerifier(address(prodOnChainVerifier))));
+        assertTrue(stagingOracle.isDAVerifierRegistered(IDAVerifier(address(daVerifier))));
+        assertTrue(stagingOracle.isDAVerifierRegistered(IDAVerifier(address(stagingOnChainVerifier))));
+    }
+
+    function test_OnChainVerifiersArePerOracle() public view {
+        // Each oracle has its own OnChain verifier instance
+        assertTrue(address(prodOnChainVerifier) != address(stagingOnChainVerifier));
+        // Production oracle does NOT have staging's OnChain verifier
+        assertFalse(productionOracle.isDAVerifierRegistered(IDAVerifier(address(stagingOnChainVerifier))));
+        // Staging oracle does NOT have production's OnChain verifier
+        assertFalse(stagingOracle.isDAVerifierRegistered(IDAVerifier(address(prodOnChainVerifier))));
+    }
+
+    function test_ECDSAVerifierIsSharedAcrossOracles() public view {
+        // Same ECDSA verifier address registered on both oracles
+        assertTrue(productionOracle.isDAVerifierRegistered(IDAVerifier(address(daVerifier))));
+        assertTrue(stagingOracle.isDAVerifierRegistered(IDAVerifier(address(daVerifier))));
+    }
+
+    function test_AddAssertionWithOnChainDAVerifierOnBothOracles() public {
+        // Deploy Ownable contract
+        vm.prank(user);
+        OwnableAdopter adopter = new OwnableAdopter(user);
+
+        // Whitelist user and register adopter on both oracles
+        vm.startPrank(admin);
+        productionOracle.addToWhitelist(user);
+        stagingOracle.addToWhitelist(user);
+        vm.stopPrank();
+
+        vm.startPrank(user);
+        productionOracle.registerAssertionAdopter(address(adopter), adminVerifier, "");
+        stagingOracle.registerAssertionAdopter(address(adopter), adminVerifier, "");
+
+        // Add assertion using OnChain DA verifier on production
+        bytes memory proof = abi.encode(uint256(42));
+        bytes32 assertionId = keccak256(proof);
+        productionOracle.addAssertion(
+            address(adopter), IDAVerifier(address(prodOnChainVerifier)), assertionId, "", proof
+        );
+
+        // Add assertion using OnChain DA verifier on staging (different assertion)
+        bytes memory proof2 = abi.encode(uint256(43));
+        bytes32 assertionId2 = keccak256(proof2);
+        stagingOracle.addAssertion(
+            address(adopter), IDAVerifier(address(stagingOnChainVerifier)), assertionId2, "", proof2
+        );
+
+        vm.stopPrank();
+
+        // Verify assertions exist
+        assertTrue(productionOracle.hasAssertion(address(adopter), assertionId));
+        assertTrue(stagingOracle.hasAssertion(address(adopter), assertionId2));
     }
 }
