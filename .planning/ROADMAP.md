@@ -62,11 +62,11 @@ Plans:
   2. DeployCoreWithStaging shares DA verifiers across production and staging oracle instances
   3. Integration tests demonstrate addAssertion works end-to-end with both ECDSA and on-chain DA verifiers through the deployed proxy
   4. Post-upgrade registry population is scripted (not manual) so there is no denial-of-service window where addAssertion reverts due to empty registry
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md — Update deployment scripts to deploy DAVerifierOnChain and register both DA verifiers (R16, R17, R18)
+- [ ] 03-02-PLAN.md — Update integration tests to validate DA verifier registry across both oracles (R16, R17, R18)
 
 ### Phase 4: Documentation + ABI Artifacts
 **Goal**: README documents the DA verifier registry and new deployment parameters, and published ABI artifacts reflect all interface changes
@@ -116,5 +116,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 |-------|----------------|--------|-----------|
 | 1. DAVerifierRegistry Library + DAVerifierOnChain | 2/2 | Complete | 2026-03-09 |
 | 2. StateOracle Integration | 0/2 | Not started | - |
-| 3. Deployment Scripts + Integration Tests | 0/? | Not started | - |
+| 3. Deployment Scripts + Integration Tests | 0/2 | Not started | - |
 | 4. Documentation + ABI Artifacts | 0/? | Not started | - |
