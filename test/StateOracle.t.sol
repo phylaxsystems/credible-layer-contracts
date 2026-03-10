@@ -778,9 +778,7 @@ contract StorageLayout is StateOracleBase {
         assertEq(stateOracle.maxAssertionsPerAA(), MAX_ASSERTIONS_PER_AA, "maxAssertionsPerAA should be set");
 
         // daVerifiers: verify the mock is registered (set during initialize)
-        assertTrue(
-            stateOracle.isDAVerifierRegistered(daVerifierMock), "daVerifierMock should be registered after init"
-        );
+        assertTrue(stateOracle.isDAVerifierRegistered(daVerifierMock), "daVerifierMock should be registered after init");
 
         // adminVerifiers: verify the admin verifier is registered
         assertTrue(
