@@ -75,10 +75,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. npm run prepare produces updated artifacts reflecting the new addAssertion signature, new governance functions, new events, and DAVerifierOnChain ABI
   2. README documents DA verifier registry governance functions, new addAssertion parameter, DAVerifierOnChain usage, and any new environment variables for deployment scripts
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 04-01: TBD
+- [ ] 04-01-PLAN.md — Regenerate ABI artifacts and update README documentation (R19, R20)
 
 ## Coverage
 
@@ -117,4 +117,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 | 1. DAVerifierRegistry Library + DAVerifierOnChain | 2/2 | Complete | 2026-03-09 |
 | 2. StateOracle Integration | 2/2 | Complete | 2026-03-10 |
 | 3. Deployment Scripts + Integration Tests | 2/2 | Complete | 2026-03-10 |
-| 4. Documentation + ABI Artifacts | 0/? | Not started | - |
+| 4. Documentation + ABI Artifacts | 0/1 | Not started | - |
