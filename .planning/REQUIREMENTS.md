@@ -110,7 +110,7 @@
 | R16 | Phase 3 | Complete |
 | R17 | Phase 3 | Complete |
 | R18 | Phase 3 | Complete |
-| R19 | Phase 4 | Pending |
-| R20 | Phase 4 | Pending |
+| R19 | Phase 4 | Complete |
+| R20 | Phase 4 | Complete |
 
 Coverage: 20/20 requirements assigned to phases. No orphans.
