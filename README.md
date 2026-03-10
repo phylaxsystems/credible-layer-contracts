@@ -41,6 +41,7 @@ the contracts and enforce the validation of assertions.
 - An assertion ID can be registered only once. If removed (inactive), it cannot be re-added—attempting to reuse the same ID will revert.
 - Activation and deactivation blocks are enforced via the configured timelock.
 - External admin verifiers (owner-based, whitelist) govern who may register new adopters.
+- Managers select a registered DA verifier when adding each assertion, enabling per-assertion choice of data availability mechanism from a governance-managed registry.
 
 ### Protocol Admin Verification
 
@@ -51,17 +52,14 @@ over the protocol. It is needed for initial registration.
 ### Data Availability Verification
 
 The Data Availability Verification interface ensures that the assertion bytecode is available.
-Typical data availability layers are:
+Governance can register multiple DA verifiers in the DA verifier registry, and managers select
+which registered verifier to use when adding each assertion. Two DA verifier implementations
+are available:
 
-- Network hosted DA server
-- Decentralized DA networks
-- The underlying network itself
+- **`DAVerifierECDSA`**: Requires a signature over the assertion ID from a configured `DA_PROVER_ADDRESS`. When storing the assertion at the [Assertion DA](https://github.com/phylaxsystems/assertion-da), the user will receive the signature in return.
+- **`DAVerifierOnChain`**: Validates that `keccak256(proof) == assertionId`, proving that the assertion bytecode is available on-chain through the proof data itself.
 
-When adding assertions to a protocol, some form of proof might be needed to be passed with the call
-to verify the availability of the assertion bytecode.
-For example, the `DAVerifierECDSA` requires a signature over the assertion id from a configured
-`DA_PROVER_ADDRESS`. When storing the assertion at the [Assertion DA](https://github.com/phylaxsystems/assertion-da),
-the user will receive the signature in return.
+Typical data availability layers include network-hosted DA servers, decentralized DA networks, and the underlying network itself.
 
 ### State Oracle Administration
 
@@ -70,12 +68,13 @@ The State Oracle owner retains privileged controls as a safety net for protocol 
 - **Add or remove admin verifiers:** Adjust which verification modules are authorized to verify ownership of new assertion adopters.
 - **Register or revoke managers:** Directly assign, revoke, or reset managers for assertion adopters when necessary.
 - **Remove assertions:** Forcefully deactivate assertions if malicious or unwanted logic is introduced, or if a project requests emergency removal.
+- **Add or remove DA verifiers:** Adjust which data availability verification modules are authorized for use when adding assertions (`addDAVerifier`, `removeDAVerifier`).
 
 These controls are intended strictly for emergency response scenarios—such as attacks or lost manager keys—and should be exercised with operational safeguards to avoid disrupting legitimate protocol activity.
 
 ### Deployment
 
-The deployment scripts (`script/DeployCore.s.sol` and `script/DeployCoreWithCreateX.s.sol`) provision the core protocol with the `DAVerifierECDSA` implementation. Any assertion onboarding performed against the resulting `StateOracle` will require a signature from `DA_PROVER_ADDRESS`.
+The deployment scripts (`script/DeployCore.s.sol`, `script/DeployCoreWithCreateX.s.sol`, and `script/DeployCoreWithStaging.s.sol`) provision the core protocol with both `DAVerifierECDSA` and `DAVerifierOnChain` implementations. Both DA verifiers are deployed and registered in the DA verifier registry during initialization, allowing managers to select either mechanism when adding assertions.
 
 ### Environment Variables
 
@@ -89,20 +88,27 @@ Set the following environment variables before running the deployment scripts:
 - `DEPLOY_ADMIN_VERIFIER_WHITELIST` (true/false)
 - `ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS` (required when whitelist verifier is enabled)
 
+The following additional variables apply only to `DeployCoreWithStaging.s.sol`:
+
+- `STAGING_STATE_ORACLE_MAX_ASSERTIONS_PER_AA`
+- `STAGING_STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS`
+
 ### Deployment Overview
 
 Running `DeployCore` or `DeployCoreWithCreateX` will:
 
 1. Deploy the DA verifier (ECDSA) and log its address.
-2. Deploy `AdminVerifierOwner` if `STATE_ORACLE_ADMIN_VERIFIER_OWNER=true` and log its address.
-3. Deploy `AdminVerifierWhitelist` if `STATE_ORACLE_ADMIN_VERIFIER_WHITELIST=true` (using `ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS` as constructor owner) and log its address.
-4. Deploy the `StateOracle` implementation and log its address.
-5. Deploy the proxy, initialize it with the configured admin verifiers, and log the proxy address.
+2. Deploy the DA verifier (OnChain) and log its address.
+3. Deploy `AdminVerifierOwner` if `DEPLOY_ADMIN_VERIFIER_OWNER=true` and log its address.
+4. Deploy `AdminVerifierWhitelist` if `DEPLOY_ADMIN_VERIFIER_WHITELIST=true` (using `ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS` as constructor owner) and log its address.
+5. Deploy the `StateOracle` implementation and log its address.
+6. Deploy the proxy, initialize it with the configured admin verifiers and DA verifiers, and log the proxy address.
 
 Console output will include labeled addresses for each deployed contract, e.g.:
 
 ```
 DA Verifier deployed at <address>
+DA Verifier (OnChain) deployed at <address>
 Admin Verifier (Owner) deployed at <address>
 Admin Verifier (Whitelist) deployed at <address>
 State Oracle Implementation deployed at <address>
@@ -172,6 +178,7 @@ The contracts will be deployed at
 ```txt
 == Logs ==
   DA Verifier deployed at 0xE5b59c5AF181D522be5e721D83F8b0F69592A6b0
+  DA Verifier (OnChain) deployed at 0x1234567890abcdef1234567890abcdef12345678
   Admin Verifier (Owner) deployed at 0x3e06372d794a48552203069915eA91b223297736
   Admin Verifier (Whitelist) deployed at 0xcaaC06Fc3826D47950aD28fA58bA8D986BBae0A4
   State Oracle Implementation deployed at 0x080f6B740F9CAC60BA17Adab3d763997EEdce1e7
