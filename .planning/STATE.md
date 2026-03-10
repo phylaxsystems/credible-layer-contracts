@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Phase 3 context gathered
-last_updated: "2026-03-10T12:48:13.280Z"
-last_activity: 2026-03-09 -- Completed 02-02-PLAN.md (Storage layout validation and integration test matrix)
+status: in-progress
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-03-10T13:20:30.000Z"
+last_activity: 2026-03-10 -- Completed 03-01-PLAN.md (Deployment script DA verifier updates)
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_plans: 6
+  completed_plans: 5
+  percent: 83
 ---
 
 # Project State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-09)
 
 **Core value:** Assertion bytecode must be verifiably available -- whether through off-chain ECDSA proofs or on-chain event emission -- and the system must remain flexible about which DA mechanism each assertion uses.
-**Current focus:** Phase 2: StateOracle Integration (COMPLETE)
+**Current focus:** Phase 3: Deployment Scripts & Integration Tests (IN PROGRESS)
 
 ## Current Position
 
-Phase: 2 of 4 (StateOracle Integration) -- COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase 02 complete
-Last activity: 2026-03-09 -- Completed 02-02-PLAN.md (Storage layout validation and integration test matrix)
+Phase: 3 of 4 (Deployment Scripts & Integration Tests) -- IN PROGRESS
+Plan: 1 of 2 in current phase
+Status: Plan 03-01 complete, 03-02 remaining
+Last activity: 2026-03-10 -- Completed 03-01-PLAN.md (Deployment script DA verifier updates)
 
-Progress: [##########] 100% (Phase 2: 2/2 plans)
+Progress: [########--] 83% (Phase 3: 1/2 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 5min
-- Total execution time: 0.27 hours
+- Total plans completed: 5
+- Average duration: 6min
+- Total execution time: 0.48 hours
 
 **By Phase:**
 
@@ -45,14 +45,16 @@ Progress: [##########] 100% (Phase 2: 2/2 plans)
 |-------|-------|-------|----------|
 | 01 | 2 | 4min | 2min |
 | 02 | 2 | 12min | 6min |
+| 03 | 1 | 13min | 13min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (2min), 01-02 (2min), 02-01 (9min), 02-02 (3min)
+- Last 5 plans: 01-02 (2min), 02-01 (9min), 02-02 (3min), 03-01 (13min)
 - Trend: -
 
 *Updated after each plan completion*
 | Phase 02 P01 | 9min | 2 tasks | 8 files |
 | Phase 02 P02 | 3min | 2 tasks | 6 files |
+| Phase 03 P01 | 13min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -79,6 +81,9 @@ Recent decisions affecting current work:
 - [02-02]: Used _generateValidAssertion(bytes32 seed) pattern so ECDSA and OnChain verifiers share same test methods
 - [02-02]: StorageLayout tests use functional verification rather than raw slot reads for robustness
 - [02-02]: Added third StorageLayout test verifying DA verifier add/remove does not corrupt existing slots
+- [03-01]: DAVerifierOnChain deployed per-oracle in staging script (not shared) for isolation
+- [03-01]: OnChain verifier addresses kept as local variables in staging run() since consumed immediately
+- [03-01]: _deployDAVerifierOnChain() is virtual to allow CreateX override with deterministic salt
 
 ### Pending Todos
 
@@ -93,6 +98,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T12:48:13.266Z
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-deployment-scripts-integration-tests/03-CONTEXT.md
+Last session: 2026-03-10T13:20:30Z
+Stopped at: Completed 03-01-PLAN.md
+Resume file: .planning/phases/03-deployment-scripts-integration-tests/03-01-SUMMARY.md
