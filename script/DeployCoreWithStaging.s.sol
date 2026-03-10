@@ -27,21 +27,28 @@ contract DeployCoreWithStaging is DeployCore {
         // Fund persistent accounts with 1 wei if empty
         _fundPersistentAccounts();
 
-        // Deploy DA Verifier (ECDSA)
+        // Deploy shared DA Verifier (ECDSA)
         deployedDAVerifier = _deployDAVerifier();
-        // Deploy Admin Verifiers
+        // Deploy shared Admin Verifiers
         deployedAdminVerifiers = _deployAdminVerifiers();
-        // Deploy state Oracle
-        address stateOracle = _deployStateOracle(assertionTimelockBlocks, "State Oracle");
-        // Deploy State Oracle Proxy
-        deployedProductionOracle =
-            _deployStateOracleProxy(stateOracle, deployedAdminVerifiers, deployedDAVerifier, maxAssertionsPerAA);
 
-        // Deploy staging State Oracle
+        // Production oracle
+        address prodDAVerifierOnChain = _deployDAVerifierOnChain();
+        address stateOracle = _deployStateOracle(assertionTimelockBlocks, "State Oracle");
+        address[] memory prodDAVerifiers = new address[](2);
+        prodDAVerifiers[0] = deployedDAVerifier;
+        prodDAVerifiers[1] = prodDAVerifierOnChain;
+        deployedProductionOracle =
+            _deployStateOracleProxy(stateOracle, deployedAdminVerifiers, prodDAVerifiers, maxAssertionsPerAA);
+
+        // Staging oracle
+        address stagingDAVerifierOnChain = _deployDAVerifierOnChain();
         address stagingOracle = _deployStateOracle(stagingAssertionTimelockBlocks, "Staging State Oracle");
-        // Deploy staging State Oracle Proxy
+        address[] memory stagingDAVerifiers = new address[](2);
+        stagingDAVerifiers[0] = deployedDAVerifier;
+        stagingDAVerifiers[1] = stagingDAVerifierOnChain;
         deployedStagingOracle = _deployStateOracleProxy(
-            stagingOracle, deployedAdminVerifiers, deployedDAVerifier, stagingMaxAssertionsPerAA
+            stagingOracle, deployedAdminVerifiers, stagingDAVerifiers, stagingMaxAssertionsPerAA
         );
     }
 }

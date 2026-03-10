@@ -9,6 +9,7 @@ import {IDAVerifier} from "../../src/interfaces/IDAVerifier.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {AdminVerifierOwner} from "../../src/verification/admin/AdminVerifierOwner.sol";
 import {DAVerifierECDSA} from "../../src/verification/da/DAVerifierECDSA.sol";
+import {DAVerifierOnChain} from "../../src/verification/da/DAVerifierOnChain.sol";
 import {OwnableAdopter} from "../utils/Adopter.sol";
 
 contract DeployCoreWithStagingIntegrationTest is Test {
@@ -37,25 +38,34 @@ contract DeployCoreWithStagingIntegrationTest is Test {
         IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
         verifiers[0] = adminVerifier;
 
-        IDAVerifier[] memory daVfrs = new IDAVerifier[](1);
-        daVfrs[0] = IDAVerifier(address(daVerifier));
+        // Deploy production oracle with per-oracle OnChain verifier
+        DAVerifierOnChain prodOnChain = new DAVerifierOnChain();
+        IDAVerifier[] memory prodDaVfrs = new IDAVerifier[](2);
+        prodDaVfrs[0] = IDAVerifier(address(daVerifier));
+        prodDaVfrs[1] = IDAVerifier(address(prodOnChain));
 
-        // Deploy production oracle
         StateOracle prodImpl = new StateOracle(100);
         productionOracle = StateOracle(
             address(
                 new TransparentUpgradeableProxy(
-                    address(prodImpl), admin, abi.encodeCall(StateOracle.initialize, (admin, verifiers, daVfrs, 10))
+                    address(prodImpl), admin, abi.encodeCall(StateOracle.initialize, (admin, verifiers, prodDaVfrs, 10))
                 )
             )
         );
 
-        // Deploy staging oracle
+        // Deploy staging oracle with per-oracle OnChain verifier
+        DAVerifierOnChain stagingOnChain = new DAVerifierOnChain();
+        IDAVerifier[] memory stagingDaVfrs = new IDAVerifier[](2);
+        stagingDaVfrs[0] = IDAVerifier(address(daVerifier));
+        stagingDaVfrs[1] = IDAVerifier(address(stagingOnChain));
+
         StateOracle stagingImpl = new StateOracle(10);
         stagingOracle = StateOracle(
             address(
                 new TransparentUpgradeableProxy(
-                    address(stagingImpl), admin, abi.encodeCall(StateOracle.initialize, (admin, verifiers, daVfrs, 5))
+                    address(stagingImpl),
+                    admin,
+                    abi.encodeCall(StateOracle.initialize, (admin, verifiers, stagingDaVfrs, 5))
                 )
             )
         );
