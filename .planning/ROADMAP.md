@@ -13,8 +13,8 @@ This milestone replaces the single immutable DA_VERIFIER in StateOracle with a g
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: DAVerifierRegistry Library + DAVerifierOnChain** - Build independent library and on-chain verifier with full unit tests
-- [ ] **Phase 2: StateOracle Integration** - Integrate DA verifier registry, update addAssertion, extend event, add governance functions
-- [ ] **Phase 3: Deployment Scripts + Integration Tests** - Update all deployment scripts and validate full upgrade path
+- [x] **Phase 2: StateOracle Integration** - Integrate DA verifier registry, update addAssertion, extend event, add governance functions
+- [x] **Phase 3: Deployment Scripts + Integration Tests** - Update all deployment scripts and validate full upgrade path
 - [ ] **Phase 4: Documentation + ABI Artifacts** - Update README and regenerate published ABI artifacts
 
 ## Phase Details
@@ -50,8 +50,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — StateOracle contract changes + unit tests + compilation fixes (R2, R3, R4, R5, R6, R7, R8, R9, R10, R14)
-- [ ] 02-02-PLAN.md — Storage layout validation + integration test matrix (R8, R13, R15)
+- [x] 02-01-PLAN.md — StateOracle contract changes + unit tests + compilation fixes (R2, R3, R4, R5, R6, R7, R8, R9, R10, R14)
+- [x] 02-02-PLAN.md — Storage layout validation + integration test matrix (R8, R13, R15)
 
 ### Phase 3: Deployment Scripts + Integration Tests
 **Goal**: All deployment scripts deploy and configure the DA verifier registry, and integration tests validate the full upgrade path including post-upgrade registry population
@@ -65,8 +65,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Update deployment scripts to deploy DAVerifierOnChain and register both DA verifiers (R16, R17, R18)
-- [ ] 03-02-PLAN.md — Update integration tests to validate DA verifier registry across both oracles (R16, R17, R18)
+- [x] 03-01-PLAN.md — Update deployment scripts to deploy DAVerifierOnChain and register both DA verifiers (R16, R17, R18)
+- [x] 03-02-PLAN.md — Update integration tests to validate DA verifier registry across both oracles (R16, R17, R18)
 
 ### Phase 4: Documentation + ABI Artifacts
 **Goal**: README documents the DA verifier registry and new deployment parameters, and published ABI artifacts reflect all interface changes
@@ -115,6 +115,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. DAVerifierRegistry Library + DAVerifierOnChain | 2/2 | Complete | 2026-03-09 |
-| 2. StateOracle Integration | 0/2 | Not started | - |
-| 3. Deployment Scripts + Integration Tests | 0/2 | Not started | - |
+| 2. StateOracle Integration | 2/2 | Complete | 2026-03-10 |
+| 3. Deployment Scripts + Integration Tests | 2/2 | Complete | 2026-03-10 |
 | 4. Documentation + ABI Artifacts | 0/? | Not started | - |

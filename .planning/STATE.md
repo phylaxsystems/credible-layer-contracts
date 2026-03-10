@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in-progress
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-03-10T13:20:30.000Z"
-last_activity: 2026-03-10 -- Completed 03-01-PLAN.md (Deployment script DA verifier updates)
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-03-10T13:35:47.000Z"
+last_activity: 2026-03-10 -- Completed 03-02-PLAN.md (DA verifier registry integration tests)
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 5
-  percent: 83
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-09)
 
 **Core value:** Assertion bytecode must be verifiably available -- whether through off-chain ECDSA proofs or on-chain event emission -- and the system must remain flexible about which DA mechanism each assertion uses.
-**Current focus:** Phase 3: Deployment Scripts & Integration Tests (IN PROGRESS)
+**Current focus:** Phase 3: Deployment Scripts & Integration Tests (COMPLETE)
 
 ## Current Position
 
-Phase: 3 of 4 (Deployment Scripts & Integration Tests) -- IN PROGRESS
-Plan: 1 of 2 in current phase
-Status: Plan 03-01 complete, 03-02 remaining
-Last activity: 2026-03-10 -- Completed 03-01-PLAN.md (Deployment script DA verifier updates)
+Phase: 3 of 4 (Deployment Scripts & Integration Tests) -- COMPLETE
+Plan: 2 of 2 in current phase
+Status: Phase 3 complete, Phase 4 next
+Last activity: 2026-03-10 -- Completed 03-02-PLAN.md (DA verifier registry integration tests)
 
-Progress: [########--] 83% (Phase 3: 1/2 plans)
+Progress: [##########] 100% (Phase 3: 2/2 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
+- Total plans completed: 6
 - Average duration: 6min
-- Total execution time: 0.48 hours
+- Total execution time: 0.60 hours
 
 **By Phase:**
 
@@ -45,16 +45,17 @@ Progress: [########--] 83% (Phase 3: 1/2 plans)
 |-------|-------|-------|----------|
 | 01 | 2 | 4min | 2min |
 | 02 | 2 | 12min | 6min |
-| 03 | 1 | 13min | 13min |
+| 03 | 2 | 20min | 10min |
 
 **Recent Trend:**
-- Last 5 plans: 01-02 (2min), 02-01 (9min), 02-02 (3min), 03-01 (13min)
-- Trend: -
+- Last 5 plans: 02-01 (9min), 02-02 (3min), 03-01 (13min), 03-02 (7min)
+- Trend: stable
 
 *Updated after each plan completion*
 | Phase 02 P01 | 9min | 2 tasks | 8 files |
 | Phase 02 P02 | 3min | 2 tasks | 6 files |
 | Phase 03 P01 | 13min | 2 tasks | 4 files |
+| Phase 03 P02 | 7min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ Recent decisions affecting current work:
 - [03-01]: DAVerifierOnChain deployed per-oracle in staging script (not shared) for isolation
 - [03-01]: OnChain verifier addresses kept as local variables in staging run() since consumed immediately
 - [03-01]: _deployDAVerifierOnChain() is virtual to allow CreateX override with deterministic salt
+- [03-02]: DA verifier instances promoted to state variables for test accessibility
+- [03-02]: OnChain DA verifier proof uses keccak256(proof) == assertionId pattern per DAVerifierOnChain.verifyDA
 
 ### Pending Todos
 
@@ -98,6 +101,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T13:20:30Z
-Stopped at: Completed 03-01-PLAN.md
-Resume file: .planning/phases/03-deployment-scripts-integration-tests/03-01-SUMMARY.md
+Last session: 2026-03-10T13:35:47Z
+Stopped at: Completed 03-02-PLAN.md
+Resume file: .planning/phases/03-deployment-scripts-integration-tests/03-02-SUMMARY.md
