@@ -2,7 +2,7 @@
 
 ## What This Is
 
-The Credible Layer protocol manages assertion adopters and their assertions through an upgradeable StateOracle. This milestone adds a DA verifier registry (replacing the single immutable DA verifier) and introduces an on-chain DA verifier that validates bytecode by hash. The `AssertionAdded` event is extended to include proof data, so readers can retrieve assertion bytecode directly from chain events instead of relying on a centralized database.
+The Credible Layer protocol manages assertion adopters and their assertions through an upgradeable StateOracle. The v1.0 milestone added a governance-managed DA verifier registry (replacing the single immutable DA verifier) and an on-chain DA verifier that validates bytecode by hash. Managers choose a registered DA verifier per-assertion at add time, and the `AssertionAdded` event emits proof data so readers can retrieve assertion bytecode directly from chain events.
 
 ## Core Value
 
@@ -20,21 +20,22 @@ Assertion bytecode must be verifiably available — whether through off-chain EC
 - ✓ Whitelist-gated operations — existing
 - ✓ Batch execution via delegatecall — existing
 - ✓ TransparentUpgradeableProxy deployment — existing
+- ✓ DA verifier registry replacing single immutable DA_VERIFIER — v1.0
+- ✓ DAVerifierRegistry library mirroring AdminVerifierRegistry — v1.0
+- ✓ Manager picks DA verifier per-assertion when calling addAssertion — v1.0
+- ✓ Governance can add/remove DA verifiers — v1.0
+- ✓ DA verifiers initialized during initialize() — v1.0
+- ✓ DAVerifierOnChain verifies keccak256(proof) == assertionId — v1.0
+- ✓ AssertionAdded event extended with daVerifier, metadata, proof fields — v1.0
+- ✓ IDAVerifier interface unchanged (verifyDA remains view) — v1.0
+- ✓ Deployment scripts updated for DA verifier registry — v1.0
+- ✓ Storage layout safe for proxy upgrade (append-only) — v1.0
+- ✓ ABI artifacts regenerated — v1.0
+- ✓ README updated with DA verifier registry docs — v1.0
 
 ### Active
 
-- [ ] DA verifier registry replacing single immutable DA_VERIFIER
-- [ ] DAVerifierRegistry library mirroring AdminVerifierRegistry
-- [ ] Manager picks DA verifier per-assertion when calling addAssertion
-- [ ] Governance can add/remove DA verifiers (mirroring admin verifier management)
-- [ ] DA verifiers initialized during `initialize()` (like admin verifiers)
-- [ ] On-chain DA verifier (`DAVerifierOnChain`) that verifies `keccak256(proof) == assertionId`
-- [ ] `AssertionAdded` event extended with `daVerifier`, `metadata`, and `proof` fields
-- [ ] Readers can retrieve bytecode from AssertionAdded event when on-chain DA is used
-- [ ] AssertionAdded event links bytecode to adopter+assertionId unambiguously
-- [ ] IDAVerifier interface unchanged (verifyDA remains view)
-- [ ] Deployment scripts updated for DA verifier registry
-- [ ] Storage layout safe for proxy upgrade (registry mapping appended, immutable removed)
+(None — planning next milestone)
 
 ### Out of Scope
 
@@ -46,43 +47,39 @@ Assertion bytecode must be verifiably available — whether through off-chain EC
 
 ## Context
 
-**Assertion IDs** are `keccak256(deployable bytecode)` where deployable bytecode = creation bytecode + ABI-encoded constructor args. Previously, bytecode was stored in a centralized database and DA was proven via ECDSA signature from a trusted prover. This change makes on-chain bytecode availability optional — the manager chooses at assertion-add time whether to use ECDSA (off-chain) or on-chain emission.
+Shipped v1.0 with 5,109 LOC Solidity across 18 modified files.
+Tech stack: Foundry, OpenZeppelin, Solady, forge-std.
+263 tests passing (unit, fuzz, integration, storage layout).
 
-**Proof field semantics:** The `proof` parameter in `addAssertion` / `verifyDA` carries:
+**Assertion IDs** are `keccak256(deployable bytecode)` where deployable bytecode = creation bytecode + ABI-encoded constructor args. The DA verifier registry allows managers to choose at assertion-add time whether to use ECDSA (off-chain) or on-chain emission for data availability proof.
+
+**Proof field semantics:**
 - For ECDSA: the signature (65 bytes) — proof that a trusted party attests data exists elsewhere
-- For on-chain: the deployable bytecode itself — the most direct proof of availability (the data is right there)
+- For on-chain: the deployable bytecode itself — the most direct proof of availability
 
-`metadata` remains available for additional context and is currently unused by both verifiers.
-
-**Event design:** `AssertionAdded` is extended to include `daVerifier`, `metadata`, and `proof`. When on-chain DA is used, the reader gets the full bytecode directly from the event. When ECDSA is used, the proof field contains just a 65-byte signature (negligible gas overhead). The reader matches events by `assertionId` + `assertionAdopter` — both are unique (assertions can never be re-added).
-
-**Storage safety:** `DA_VERIFIER` is currently an immutable (lives in implementation bytecode, not proxy storage). Removing it from the new implementation is safe. The new `mapping(IDAVerifier => bool)` is appended after `maxAssertionsPerAA` in storage layout.
-
-**Files to change:**
-- `src/StateOracle.sol` — remove DA_VERIFIER immutable, add DA verifier registry, update addAssertion signature and event, add governance functions, update constructor/initialize
-- `src/verification/da/DAVerifierECDSA.sol` — no change (interface unchanged)
-- New: `src/verification/da/DAVerifierOnChain.sol` — hash verification
-- New: `src/lib/DAVerifierRegistry.sol` — registry library mirroring AdminVerifierRegistry
-- `script/` — deployment scripts updated for DA verifier registry
-- `test/` — new and updated tests
-
-## Constraints
-
-- **Upgradeability**: Storage layout must be preserved — append-only changes to StateOracle storage
-- **ABI change**: addAssertion signature changes (new daVerifier param) and AssertionAdded event changes — breaking for existing callers
-- **Gas**: On-chain bytecode emission costs more gas than ECDSA — expected and acceptable since it's opt-in per assertion
-- **No interface change**: IDAVerifier stays as-is with view-only verifyDA
+**Storage layout:** `DA_VERIFIER` immutable was removed. The new `mapping(IDAVerifier => bool)` is appended after `maxAssertionsPerAA` at storage slot 8.
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| DA verifier registry instead of single immutable | Mirrors admin verifier pattern, allows multiple DA mechanisms | — Pending |
-| Manager picks DA verifier per-assertion | Maximum flexibility, different assertions can use different DA | — Pending |
-| No IDAVerifier interface change | On-chain verifier just does hash check in existing verifyDA; no callback needed | — Pending |
-| Bytecode in proof field (not metadata) | Presenting the data IS the proof of availability; metadata stays for additional context | — Pending |
-| Extend AssertionAdded event (not separate event) | Single event with daVerifier+metadata+proof; reader interprets based on verifier type | — Pending |
-| Always emit proof in event | Uniform behavior; 65-byte ECDSA overhead is negligible | — Pending |
+| DA verifier registry instead of single immutable | Mirrors admin verifier pattern, allows multiple DA mechanisms | ✓ Good |
+| Manager picks DA verifier per-assertion | Maximum flexibility, different assertions can use different DA | ✓ Good |
+| No IDAVerifier interface change | On-chain verifier does hash check in existing verifyDA; no callback needed | ✓ Good |
+| Bytecode in proof field (not metadata) | Presenting the data IS the proof of availability; metadata stays for context | ✓ Good |
+| Extend AssertionAdded event (not separate event) | Single event with daVerifier+metadata+proof; reader interprets based on verifier type | ✓ Good |
+| Always emit proof in event | Uniform behavior; 65-byte ECDSA overhead is negligible | ✓ Good |
+| DAVerifierOnChain.verifyDA is pure (not view) | No state reads or external calls needed; stricter than interface requires | ✓ Good |
+| DAVerifierNotRegistered as StateOracle error | Contract-level error, not reusing library error | ✓ Good |
+| daVerifiers mapping at slot 8 after maxAssertionsPerAA | Append-only storage layout preserves proxy upgrade safety | ✓ Good |
+| DAVerifierOnChain deployed per-oracle in staging | Isolation between production and staging environments | ✓ Good |
+
+## Constraints
+
+- **Upgradeability**: Storage layout must be preserved — append-only changes to StateOracle storage
+- **ABI change**: addAssertion signature changed (new daVerifier param) and AssertionAdded event changed — breaking for existing callers
+- **Gas**: On-chain bytecode emission costs more gas than ECDSA — expected and acceptable since it's opt-in per assertion
+- **No interface change**: IDAVerifier stays as-is with view-only verifyDA
 
 ---
-*Last updated: 2026-03-09 after initialization*
+*Last updated: 2026-03-11 after v1.0 milestone*
