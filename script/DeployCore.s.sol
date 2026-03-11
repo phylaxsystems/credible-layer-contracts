@@ -112,7 +112,7 @@ contract DeployCore is Script {
 
     function _deployDAVerifier() internal virtual returns (address) {
         address daVerifier = address(new DAVerifierECDSA(daProver));
-        console2.log("DA Verifier deployed at", daVerifier);
+        console2.log("DA Verifier (ECDSA) deployed at", daVerifier);
         return daVerifier;
     }
 

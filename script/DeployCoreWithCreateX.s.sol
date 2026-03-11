@@ -27,7 +27,7 @@ contract DeployCoreWithCreateX is DeployCore {
         address daVerifier = deployCreate3(
             SALT_DA_VERIFIER_NAME, abi.encodePacked(type(DAVerifierECDSA).creationCode, abi.encode(daProver))
         );
-        console2.log("DA Verifier deployed at", daVerifier);
+        console2.log("DA Verifier (ECDSA) deployed at", daVerifier);
         return daVerifier;
     }
 

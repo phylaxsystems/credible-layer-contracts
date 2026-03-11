@@ -107,7 +107,7 @@ Running `DeployCore` or `DeployCoreWithCreateX` will:
 Console output will include labeled addresses for each deployed contract, e.g.:
 
 ```
-DA Verifier deployed at <address>
+DA Verifier (ECDSA) deployed at <address>
 DA Verifier (OnChain) deployed at <address>
 Admin Verifier (Owner) deployed at <address>
 Admin Verifier (Whitelist) deployed at <address>
@@ -177,7 +177,7 @@ The contracts will be deployed at
 
 ```txt
 == Logs ==
-  DA Verifier deployed at 0xE5b59c5AF181D522be5e721D83F8b0F69592A6b0
+  DA Verifier (ECDSA) deployed at 0xE5b59c5AF181D522be5e721D83F8b0F69592A6b0
   DA Verifier (OnChain) deployed at 0x1234567890abcdef1234567890abcdef12345678
   Admin Verifier (Owner) deployed at 0x3e06372d794a48552203069915eA91b223297736
   Admin Verifier (Whitelist) deployed at 0xcaaC06Fc3826D47950aD28fA58bA8D986BBae0A4
