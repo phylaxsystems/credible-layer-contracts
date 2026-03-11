@@ -309,6 +309,7 @@ When multiple agents or sequential agents work in this repo, optimize for handof
 
 ### Before finishing
 
+- always run `forge fmt` before committing any Solidity changes,
 - run the smallest relevant verification commands first,
 - run `forge test` for broader confidence on non-trivial changes,
 - mention what you did not verify if you could not run it,
