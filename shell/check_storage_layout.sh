@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SNAPSHOT_FILE=".storage-layout"
-CURRENT=$(forge inspect StateOracle storage-layout 2>&1)
+CURRENT=$(forge inspect StateOracle storage-layout --json)
 
 if [ ! -f "$SNAPSHOT_FILE" ]; then
     echo "No .storage-layout snapshot found. Generating..."
@@ -18,43 +18,56 @@ if [ "$CURRENT" = "$PREVIOUS" ]; then
     exit 0
 fi
 
-# Extract slot assignments (Name + Slot columns) from both layouts
-# to detect reordering of existing variables
-prev_slots=$(echo "$PREVIOUS" | grep '|' | grep -v 'Name' | grep -v '====' | grep -v '^\+' | awk -F'|' '{gsub(/^ +| +$/, "", $2); gsub(/^ +| +$/, "", $4); if ($2 != "" && $2 != "---") print $2 ":" $4}')
-curr_slots=$(echo "$CURRENT" | grep '|' | grep -v 'Name' | grep -v '====' | grep -v '^\+' | awk -F'|' '{gsub(/^ +| +$/, "", $2); gsub(/^ +| +$/, "", $4); if ($2 != "" && $2 != "---") print $2 ":" $4}')
+# Compare each variable that existed in the previous layout against the current one.
+# Any change in slot, offset, or type for an existing variable is a breaking change.
+collision_detected=false
 
-# Check for reordering: any variable that existed before must keep the same slot
-reorder_detected=false
-while IFS= read -r entry; do
-    name="${entry%%:*}"
-    old_slot="${entry##*:}"
-    new_entry=$(echo "$curr_slots" | grep "^${name}:" || true)
-    if [ -n "$new_entry" ]; then
-        new_slot="${new_entry##*:}"
-        if [ "$old_slot" != "$new_slot" ]; then
-            echo "CRITICAL: Variable '$name' moved from slot $old_slot to slot $new_slot!"
-            reorder_detected=true
-        fi
+prev_count=$(echo "$PREVIOUS" | jq '.storage | length')
+for i in $(seq 0 $((prev_count - 1))); do
+    name=$(echo "$PREVIOUS" | jq -r ".storage[$i].label")
+    old_slot=$(echo "$PREVIOUS" | jq -r ".storage[$i].slot")
+    old_offset=$(echo "$PREVIOUS" | jq -r ".storage[$i].offset")
+    old_type=$(echo "$PREVIOUS" | jq -r ".storage[$i].type")
+
+    # Find the same variable in current layout
+    match=$(echo "$CURRENT" | jq -r ".storage[] | select(.label == \"$name\")" 2>/dev/null)
+    if [ -z "$match" ]; then
+        echo "WARNING: Variable '$name' was removed from storage layout!"
+        collision_detected=true
+        continue
     fi
-done <<< "$prev_slots"
 
-if $reorder_detected; then
+    new_slot=$(echo "$match" | jq -r '.slot')
+    new_offset=$(echo "$match" | jq -r '.offset')
+    new_type=$(echo "$match" | jq -r '.type')
+
+    if [ "$old_slot" != "$new_slot" ]; then
+        echo "CRITICAL: Variable '$name' moved from slot $old_slot to slot $new_slot!"
+        collision_detected=true
+    fi
+    if [ "$old_offset" != "$new_offset" ]; then
+        echo "CRITICAL: Variable '$name' offset changed from $old_offset to $new_offset in slot $old_slot!"
+        collision_detected=true
+    fi
+    if [ "$old_type" != "$new_type" ]; then
+        echo "CRITICAL: Variable '$name' type changed from $old_type to $new_type!"
+        collision_detected=true
+    fi
+done
+
+if $collision_detected; then
     echo ""
-    echo "STORAGE SLOT REORDERING DETECTED - This will break existing proxies!"
+    echo "STORAGE LAYOUT COLLISION DETECTED - This will break existing proxies!"
     echo ""
-    echo "Previous layout:"
-    echo "$PREVIOUS"
-    echo ""
-    echo "Current layout:"
-    echo "$CURRENT"
+    diff <(echo "$PREVIOUS" | jq '.storage') <(echo "$CURRENT" | jq '.storage') || true
     exit 2
 fi
 
-echo "Storage layout has changed (but no reordering detected)."
+echo "Storage layout has changed (but no collisions detected)."
 echo ""
 echo "Diff:"
-diff <(echo "$PREVIOUS") <(echo "$CURRENT") || true
+diff <(echo "$PREVIOUS" | jq '.storage') <(echo "$CURRENT" | jq '.storage') || true
 echo ""
 echo "If this change is intentional, update the snapshot:"
-echo "  forge inspect StateOracle storage-layout > .storage-layout"
+echo "  forge inspect StateOracle storage-layout --json > .storage-layout"
 exit 1
