@@ -5,9 +5,11 @@ import {Test} from "forge-std/Test.sol";
 import {CALLER_ADDRESS, ASSERTION_CONTRACT_ADDRESS, PRECOMPILE_ADDRESS} from "../../script/DeployCore.s.sol";
 import {StateOracle} from "../../src/StateOracle.sol";
 import {IAdminVerifier} from "../../src/interfaces/IAdminVerifier.sol";
+import {IDAVerifier} from "../../src/interfaces/IDAVerifier.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {AdminVerifierOwner} from "../../src/verification/admin/AdminVerifierOwner.sol";
 import {DAVerifierECDSA} from "../../src/verification/da/DAVerifierECDSA.sol";
+import {DAVerifierOnChain} from "../../src/verification/da/DAVerifierOnChain.sol";
 import {OwnableAdopter} from "../utils/Adopter.sol";
 
 contract DeployCoreWithStagingIntegrationTest is Test {
@@ -18,6 +20,8 @@ contract DeployCoreWithStagingIntegrationTest is Test {
     StateOracle public productionOracle;
     StateOracle public stagingOracle;
     IAdminVerifier public adminVerifier;
+    DAVerifierECDSA public daVerifier;
+    DAVerifierOnChain public onChainVerifier;
 
     function setUp() public {
         vm.deal(admin, 100 ether);
@@ -30,28 +34,40 @@ contract DeployCoreWithStagingIntegrationTest is Test {
         vm.startPrank(admin);
 
         // Deploy shared components
-        DAVerifierECDSA daVerifier = new DAVerifierECDSA(daProver);
+        daVerifier = new DAVerifierECDSA(daProver);
         adminVerifier = IAdminVerifier(address(new AdminVerifierOwner()));
 
-        IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
-        verifiers[0] = adminVerifier;
+        IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](1);
+        adminVerifiers[0] = adminVerifier;
 
-        // Deploy production oracle
-        StateOracle prodImpl = new StateOracle(100, address(daVerifier));
+        // Deploy shared OnChain verifier
+        onChainVerifier = new DAVerifierOnChain();
+
+        // Shared DA verifiers for both oracles
+        IDAVerifier[] memory daVfrs = new IDAVerifier[](2);
+        daVfrs[0] = IDAVerifier(address(daVerifier));
+        daVfrs[1] = IDAVerifier(address(onChainVerifier));
+
+        // Production oracle
+        StateOracle prodImpl = new StateOracle(100);
         productionOracle = StateOracle(
             address(
                 new TransparentUpgradeableProxy(
-                    address(prodImpl), admin, abi.encodeCall(StateOracle.initialize, (admin, verifiers, 10))
+                    address(prodImpl),
+                    admin,
+                    abi.encodeCall(StateOracle.initialize, (admin, adminVerifiers, daVfrs, 10))
                 )
             )
         );
 
-        // Deploy staging oracle
-        StateOracle stagingImpl = new StateOracle(10, address(daVerifier));
+        // Staging oracle
+        StateOracle stagingImpl = new StateOracle(10);
         stagingOracle = StateOracle(
             address(
                 new TransparentUpgradeableProxy(
-                    address(stagingImpl), admin, abi.encodeCall(StateOracle.initialize, (admin, verifiers, 5))
+                    address(stagingImpl),
+                    admin,
+                    abi.encodeCall(StateOracle.initialize, (admin, adminVerifiers, daVfrs, 5))
                 )
             )
         );
@@ -149,5 +165,55 @@ contract DeployCoreWithStagingIntegrationTest is Test {
             stagingOracle.isAdminVerifierRegistered(IAdminVerifier(adminVerifier)),
             "Admin verifier not registered on staging"
         );
+    }
+
+    function test_BothOraclesHaveBothDAVerifiers() public view {
+        assertTrue(productionOracle.isDAVerifierRegistered(IDAVerifier(address(daVerifier))));
+        assertTrue(productionOracle.isDAVerifierRegistered(IDAVerifier(address(onChainVerifier))));
+        assertTrue(stagingOracle.isDAVerifierRegistered(IDAVerifier(address(daVerifier))));
+        assertTrue(stagingOracle.isDAVerifierRegistered(IDAVerifier(address(onChainVerifier))));
+    }
+
+    function test_OnChainVerifierIsSharedAcrossOracles() public view {
+        assertTrue(productionOracle.isDAVerifierRegistered(IDAVerifier(address(onChainVerifier))));
+        assertTrue(stagingOracle.isDAVerifierRegistered(IDAVerifier(address(onChainVerifier))));
+    }
+
+    function test_ECDSAVerifierIsSharedAcrossOracles() public view {
+        // Same ECDSA verifier address registered on both oracles
+        assertTrue(productionOracle.isDAVerifierRegistered(IDAVerifier(address(daVerifier))));
+        assertTrue(stagingOracle.isDAVerifierRegistered(IDAVerifier(address(daVerifier))));
+    }
+
+    function test_AddAssertionWithOnChainDAVerifierOnBothOracles() public {
+        // Deploy Ownable contract
+        vm.prank(user);
+        OwnableAdopter adopter = new OwnableAdopter(user);
+
+        // Whitelist user and register adopter on both oracles
+        vm.startPrank(admin);
+        productionOracle.addToWhitelist(user);
+        stagingOracle.addToWhitelist(user);
+        vm.stopPrank();
+
+        vm.startPrank(user);
+        productionOracle.registerAssertionAdopter(address(adopter), adminVerifier, "");
+        stagingOracle.registerAssertionAdopter(address(adopter), adminVerifier, "");
+
+        // Add assertion using OnChain DA verifier on production
+        bytes memory proof = abi.encode(uint256(42));
+        bytes32 assertionId = keccak256(proof);
+        productionOracle.addAssertion(address(adopter), assertionId, IDAVerifier(address(onChainVerifier)), "", proof);
+
+        // Add assertion using OnChain DA verifier on staging (different assertion)
+        bytes memory proof2 = abi.encode(uint256(43));
+        bytes32 assertionId2 = keccak256(proof2);
+        stagingOracle.addAssertion(address(adopter), assertionId2, IDAVerifier(address(onChainVerifier)), "", proof2);
+
+        vm.stopPrank();
+
+        // Verify assertions exist
+        assertTrue(productionOracle.hasAssertion(address(adopter), assertionId));
+        assertTrue(stagingOracle.hasAssertion(address(adopter), assertionId2));
     }
 }

@@ -7,20 +7,26 @@ import {StateOracle} from "../../src/StateOracle.sol";
 import {OwnableAdopter} from "../utils/Adopter.sol";
 import {StateOracleBase} from "../StateOracle.t.sol";
 import {IAdminVerifier} from "../../src/interfaces/IAdminVerifier.sol";
+import {IDAVerifier} from "../../src/interfaces/IDAVerifier.sol";
 import {AdminVerifierOwner} from "../../src/verification/admin/AdminVerifierOwner.sol";
 
 contract StateOracleWithDAVerifierECDSATest is StateOracleBase {
     address adopter;
+    IDAVerifier ecdsaDAVerifier;
     uint256 immutable PROVER =
         uint256(keccak256(abi.encode("pcl.test.integration.StateOracleWithDAVerifierECDSA.PROVER")));
 
     function setUp() public override {
-        DAVerifierECDSA daVerifier = new DAVerifierECDSA(vm.addr(PROVER));
+        DAVerifierECDSA ecdsaVerifier = new DAVerifierECDSA(vm.addr(PROVER));
+        ecdsaDAVerifier = IDAVerifier(address(ecdsaVerifier));
         IAdminVerifier adminVerifier = new AdminVerifierOwner();
         IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
         verifiers[0] = adminVerifier;
-        bytes memory data = abi.encodeWithSelector(StateOracle.initialize.selector, ADMIN, verifiers);
-        stateOracle = StateOracle(deployProxy(address(new StateOracle(TIMEOUT, address(daVerifier))), data));
+        IDAVerifier[] memory daVfrs = new IDAVerifier[](1);
+        daVfrs[0] = ecdsaDAVerifier;
+        bytes memory data =
+            abi.encodeWithSelector(StateOracle.initialize.selector, ADMIN, verifiers, daVfrs, MAX_ASSERTIONS_PER_AA);
+        stateOracle = StateOracle(deployProxy(address(new StateOracle(TIMEOUT)), data));
 
         // Disable whitelist for testing
         vm.prank(ADMIN);
@@ -34,7 +40,7 @@ contract StateOracleWithDAVerifierECDSATest is StateOracleBase {
     function testFuzz_addAssertionWithECDSAProof(bytes32 assertionId, bytes calldata metadata) public {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PROVER, assertionId);
         bytes memory signature = abi.encodePacked(r, s, v);
-        stateOracle.addAssertion(address(adopter), assertionId, metadata, signature);
+        stateOracle.addAssertion(address(adopter), assertionId, ecdsaDAVerifier, metadata, signature);
         vm.stopPrank();
 
         assertTrue(stateOracle.hasAssertion(address(adopter), assertionId), "Assertion should have been added");
@@ -51,8 +57,8 @@ contract StateOracleWithDAVerifierECDSATest is StateOracleBase {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(fakeProver, assertionId);
         bytes memory signature = abi.encodePacked(r, s, v);
 
-        vm.expectRevert(StateOracle.InvalidProof.selector);
-        stateOracle.addAssertion(address(adopter), assertionId, metadata, signature);
+        vm.expectRevert(abi.encodeWithSelector(StateOracle.InvalidDAProof.selector, ecdsaDAVerifier));
+        stateOracle.addAssertion(address(adopter), assertionId, ecdsaDAVerifier, metadata, signature);
         vm.stopPrank();
     }
 }

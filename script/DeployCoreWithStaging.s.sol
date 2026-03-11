@@ -4,10 +4,11 @@ pragma solidity ^0.8.28;
 import {DeployCore} from "./DeployCore.s.sol";
 
 contract DeployCoreWithStaging is DeployCore {
-    uint128 stagingAssertionTimelockBlocks;
+    uint256 stagingAssertionTimelockBlocks;
     uint16 stagingMaxAssertionsPerAA;
 
     address public deployedDAVerifier;
+    address public deployedDAVerifierOnChain;
     address[] public deployedAdminVerifiers;
     address public deployedProductionOracle;
     address public deployedStagingOracle;
@@ -17,7 +18,7 @@ contract DeployCoreWithStaging is DeployCore {
 
         // Staging state oracle parameters
         stagingMaxAssertionsPerAA = uint16(vm.envUint("STAGING_STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
-        stagingAssertionTimelockBlocks = uint128(vm.envUint("STAGING_STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"));
+        stagingAssertionTimelockBlocks = vm.envUint("STAGING_STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS");
 
         assert(stagingAssertionTimelockBlocks > 0);
         assert(stagingMaxAssertionsPerAA > 0);
@@ -27,20 +28,24 @@ contract DeployCoreWithStaging is DeployCore {
         // Fund persistent accounts with 1 wei if empty
         _fundPersistentAccounts();
 
-        // Deploy DA Verifier (ECDSA)
+        // Deploy shared verifiers
         deployedDAVerifier = _deployDAVerifier();
-        // Deploy Admin Verifiers
+        deployedDAVerifierOnChain = _deployDAVerifierOnChain();
         deployedAdminVerifiers = _deployAdminVerifiers();
-        // Deploy state Oracle
-        address stateOracle = _deployStateOracle(deployedDAVerifier, assertionTimelockBlocks, "State Oracle");
-        // Deploy State Oracle Proxy
-        deployedProductionOracle = _deployStateOracleProxy(stateOracle, deployedAdminVerifiers, maxAssertionsPerAA);
 
-        // Deploy staging State Oracle
-        address stagingOracle =
-            _deployStateOracle(deployedDAVerifier, stagingAssertionTimelockBlocks, "Staging State Oracle");
-        // Deploy staging State Oracle Proxy
+        // Shared DA verifier list for both oracles
+        address[] memory daVerifiers = new address[](2);
+        daVerifiers[0] = deployedDAVerifier;
+        daVerifiers[1] = deployedDAVerifierOnChain;
+
+        // Production oracle
+        address stateOracle = _deployStateOracle(assertionTimelockBlocks, "State Oracle");
+        deployedProductionOracle =
+            _deployStateOracleProxy(stateOracle, deployedAdminVerifiers, daVerifiers, maxAssertionsPerAA);
+
+        // Staging oracle
+        address stagingOracle = _deployStateOracle(stagingAssertionTimelockBlocks, "Staging State Oracle");
         deployedStagingOracle =
-            _deployStateOracleProxy(stagingOracle, deployedAdminVerifiers, stagingMaxAssertionsPerAA);
+            _deployStateOracleProxy(stagingOracle, deployedAdminVerifiers, daVerifiers, stagingMaxAssertionsPerAA);
     }
 }
