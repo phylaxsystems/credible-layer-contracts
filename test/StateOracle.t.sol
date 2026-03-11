@@ -762,10 +762,10 @@ contract SetMaxAssertionsPerAA is StateOracleBase {
 ///   Slot 8: daVerifiers        (mapping, 32 bytes)    -- StateOracle (NEW, appended)
 ///
 /// The key invariant: existing slots 0-7 are untouched and slot 8 is new.
-contract StorageLayout is StateOracleBase {
-    /// @notice Validates that storage layout is append-only and no existing slots were reordered
-    /// @dev Verifies all pre-existing storage variables function correctly after adding daVerifiers
-    function test_storageLayoutOrdering() public view {
+contract StorageIntegrity is StateOracleBase {
+    /// @notice Validates that all storage variables function correctly after initialization
+    /// @dev Smoke test that exercises each stored variable through its getter
+    function test_storageIntegrity() public view {
         // maxAssertionsPerAA was set to MAX_ASSERTIONS_PER_AA (5) during initialization
         assertEq(stateOracle.maxAssertionsPerAA(), MAX_ASSERTIONS_PER_AA, "maxAssertionsPerAA should be set");
 
@@ -780,37 +780,37 @@ contract StorageLayout is StateOracleBase {
 
     /// @notice Validates that the daVerifiers mapping is at the correct storage position
     /// @dev daVerifiers must be AFTER maxAssertionsPerAA (append-only, slot 8 after slot 7)
-    function test_storageLayoutAppendOnly() public {
-        // Verify pre-existing storage is intact by exercising each stored variable:
+    function test_storageIntegrityAfterOperations() public {
+        // Verify all storage variables remain functional after exercising operations:
 
-        // Slot 3: assertionAdopters - register and verify
+        // assertionAdopters - register and verify
         (address adopter, address manager) = registerAssertionAdopter();
-        assertEq(stateOracle.getManager(adopter), manager, "assertionAdopters mapping works (slot 3)");
+        assertEq(stateOracle.getManager(adopter), manager, "assertionAdopters mapping works");
 
-        // Slot 4: adminVerifiers - already verified via registration (uses isRegistered)
-        assertTrue(stateOracle.isAdminVerifierRegistered(adminVerifier), "adminVerifiers mapping works (slot 4)");
+        // adminVerifiers - already verified via registration (uses isRegistered)
+        assertTrue(stateOracle.isAdminVerifierRegistered(adminVerifier), "adminVerifiers mapping works");
 
-        // Slot 5: whitelistEnabled
-        assertFalse(stateOracle.whitelistEnabled(), "whitelistEnabled works (slot 5)");
+        // whitelistEnabled
+        assertFalse(stateOracle.whitelistEnabled(), "whitelistEnabled works");
 
-        // Slot 7: maxAssertionsPerAA
-        assertEq(stateOracle.maxAssertionsPerAA(), MAX_ASSERTIONS_PER_AA, "maxAssertionsPerAA works (slot 7)");
+        // maxAssertionsPerAA
+        assertEq(stateOracle.maxAssertionsPerAA(), MAX_ASSERTIONS_PER_AA, "maxAssertionsPerAA works");
 
-        // Slot 8: daVerifiers (NEW - must be after slot 7)
-        assertTrue(stateOracle.isDAVerifierRegistered(daVerifierMock), "daVerifiers mapping works (slot 8)");
+        // daVerifiers
+        assertTrue(stateOracle.isDAVerifierRegistered(daVerifierMock), "daVerifiers mapping works");
 
         // Add a new DA verifier to prove the mapping is functional
         IDAVerifier newVerifier = IDAVerifier(address(0xBEEF));
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addDAVerifier(newVerifier);
-        assertTrue(stateOracle.isDAVerifierRegistered(newVerifier), "New DA verifier registered in slot 8");
+        assertTrue(stateOracle.isDAVerifierRegistered(newVerifier), "New DA verifier registered");
 
         // Verify existing functionality still works after DA verifier registry operations
         addAssertionAndAssert(manager, adopter, bytes32(uint256(1)));
     }
 
-    /// @notice Validates daVerifiers does not interfere with existing storage by removing a verifier
-    function test_storageLayoutDAVerifierRemovalDoesNotAffectExistingSlots() public {
+    /// @notice Validates DA verifier operations do not interfere with other storage
+    function test_storageIntegrityAfterDAVerifierRemoval() public {
         // Add and then remove a DA verifier
         IDAVerifier tempVerifier = IDAVerifier(address(0xDEAD));
         vm.startPrank(STATE_ORACLE_ADMIN);
