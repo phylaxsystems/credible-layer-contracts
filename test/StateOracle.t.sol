@@ -72,13 +72,13 @@ contract StateOracleBase is Test, ProxyHelper {
         stateOracle.addAssertion(adopter, assertionId, daVerifierMock, new bytes(0), new bytes(0));
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion not found");
-        (uint128 activationBlock, uint128 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
+        (uint256 activationBlock, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
         assertEq(
             activationBlock,
-            uint128(block.number) + stateOracle.ASSERTION_TIMELOCK_BLOCKS(),
+            block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(),
             "Activation block mismatch"
         );
-        assertEq(deactivationBlock, uint128(0), "Deactivation block mismatch");
+        assertEq(deactivationBlock, 0, "Deactivation block mismatch");
     }
 }
 
@@ -233,17 +233,17 @@ contract RemoveAssertion is StateOracleBase {
     function testFuzz_removeAssertion(bytes32 assertionId) public {
         (address adopter, address manager) = registerAssertionAdopter();
         addAssertionAndAssert(manager, adopter, assertionId);
-        (uint128 activationBlockBefore,) = stateOracle.getAssertionWindow(adopter, assertionId);
+        (uint256 activationBlockBefore,) = stateOracle.getAssertionWindow(adopter, assertionId);
 
         vm.roll(block.number + 1);
 
         vm.prank(manager);
         stateOracle.removeAssertion(adopter, assertionId);
-        (uint128 activationBlock, uint128 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
+        (uint256 activationBlock, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
         assertEq(activationBlock, activationBlockBefore, "Activation should not change");
         assertEq(
             deactivationBlock,
-            uint128(block.number) + stateOracle.ASSERTION_TIMELOCK_BLOCKS(),
+            block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(),
             "Deactivation block mismatch"
         );
     }
@@ -266,17 +266,17 @@ contract RemoveAssertion is StateOracleBase {
     function testFuzz_removeAssertionByAdmin(bytes32 assertionId) public {
         (address adopter, address manager) = registerAssertionAdopter();
         addAssertionAndAssert(manager, adopter, assertionId);
-        (uint128 activationBlockBefore,) = stateOracle.getAssertionWindow(adopter, assertionId);
+        (uint256 activationBlockBefore,) = stateOracle.getAssertionWindow(adopter, assertionId);
 
         vm.roll(block.number + 1);
 
         vm.prank(stateOracle.owner());
         stateOracle.removeAssertionByGuardian(adopter, assertionId);
-        (uint128 activationBlock, uint128 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
+        (uint256 activationBlock, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
         assertEq(activationBlock, activationBlockBefore, "Activation should not change");
         assertEq(
             deactivationBlock,
-            uint128(block.number) + stateOracle.ASSERTION_TIMELOCK_BLOCKS(),
+            block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(),
             "Deactivation block mismatch"
         );
     }
@@ -329,7 +329,7 @@ contract RemoveAssertion is StateOracleBase {
 
         vm.roll(block.number + 1);
 
-        uint128 deactivationBlock = uint128(block.number) + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
+        uint256 deactivationBlock = block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
         // Check topic1: adopter, topic2: assertionId, data: deactivationBlock and emitting address
         vm.expectEmit(true, true, false, true, address(stateOracle));
         emit StateOracle.AssertionRemoved(adopter, assertionId, deactivationBlock);
@@ -695,8 +695,8 @@ contract Batch is StateOracleBase {
         vm.prank(OWNER);
         stateOracle.batch(calls);
 
-        (, uint128 deactivationBlock1) = stateOracle.getAssertionWindow(adopter, assertionId1);
-        (, uint128 deactivationBlock2) = stateOracle.getAssertionWindow(adopter, assertionId2);
+        (, uint256 deactivationBlock1) = stateOracle.getAssertionWindow(adopter, assertionId1);
+        (, uint256 deactivationBlock2) = stateOracle.getAssertionWindow(adopter, assertionId2);
 
         assertTrue(deactivationBlock1 != 0, "Assertion 1 should have been removed");
         assertTrue(deactivationBlock2 != 0, "Assertion 2 should have been removed");
@@ -1208,7 +1208,7 @@ contract RemoveAssertionWithWhitelist is WhitelistBase {
         vm.prank(USER1);
         stateOracle.removeAssertion(address(adopter), assertionId);
 
-        (, uint128 deactivationBlock) = stateOracle.getAssertionWindow(address(adopter), assertionId);
+        (, uint256 deactivationBlock) = stateOracle.getAssertionWindow(address(adopter), assertionId);
         assertTrue(deactivationBlock != 0, "Assertion should be marked for removal");
     }
 }
@@ -1532,7 +1532,7 @@ contract GuardianEmergencyActions is GuardianRoleBase {
         stateOracle.addAssertion(address(adopter), assertionId, daVerifierMock, new bytes(0), new bytes(0));
         vm.stopPrank();
 
-        (uint128 activationBlockBefore,) = stateOracle.getAssertionWindow(address(adopter), assertionId);
+        (uint256 activationBlockBefore,) = stateOracle.getAssertionWindow(address(adopter), assertionId);
 
         vm.roll(block.number + 1);
         uint256 removalBlock = block.number;
@@ -1542,12 +1542,10 @@ contract GuardianEmergencyActions is GuardianRoleBase {
         stateOracle.removeAssertionByGuardian(address(adopter), assertionId);
 
         // Verify deactivation block is set correctly
-        (uint128 activationBlock, uint128 deactivationBlock) =
+        (uint256 activationBlock, uint256 deactivationBlock) =
             stateOracle.getAssertionWindow(address(adopter), assertionId);
         assertEq(activationBlock, activationBlockBefore, "Activation block should not change");
-        // casting to 'uint128' is safe because block.number will never exceed uint128 in any realistic scenario
-        // forge-lint: disable-next-line(unsafe-typecast)
-        uint128 expectedDeactivationBlock = uint128(removalBlock) + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
+        uint256 expectedDeactivationBlock = removalBlock + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
         assertEq(deactivationBlock, expectedDeactivationBlock, "Deactivation block should be set correctly");
     }
 

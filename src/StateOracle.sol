@@ -20,7 +20,7 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     using DAVerifierRegistry for mapping(IDAVerifier daVerifier => bool isRegistered);
 
     /// @notice Number of blocks to wait before an assertion becomes active or inactive
-    uint128 public immutable ASSERTION_TIMELOCK_BLOCKS;
+    uint256 public immutable ASSERTION_TIMELOCK_BLOCKS;
 
     /// @notice Thrown when an unauthorized address attempts to register an assertion adopter
     error UnauthorizedRegistrant();
@@ -72,8 +72,8 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @param activationBlock Block number when the assertion becomes active
     /// @param deactivationBlock Block number when the assertion becomes inactive
     struct AssertionWindow {
-        uint128 activationBlock;
-        uint128 deactivationBlock;
+        uint256 activationBlock;
+        uint256 deactivationBlock;
     }
 
     /// @notice Emitted when a new assertion adopter is registered
@@ -177,7 +177,7 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
 
     /// @notice Initializes the contract with a timelock period
     /// @param assertionTimelockBlocks Number of blocks to wait before assertions become active/inactive
-    constructor(uint128 assertionTimelockBlocks) Ownable(msg.sender) {
+    constructor(uint256 assertionTimelockBlocks) Ownable(msg.sender) {
         require(assertionTimelockBlocks > 0, InvalidAssertionTimelock());
         ASSERTION_TIMELOCK_BLOCKS = assertionTimelockBlocks;
         renounceOwnership();
@@ -242,8 +242,8 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         require(daVerifier.verifyDA(assertionId, metadata, proof), InvalidDAProof(daVerifier));
         require(assertionAdopters[contractAddress].assertionCount < maxAssertionsPerAA, TooManyAssertions());
 
-        uint256 activationBlock = uint256(block.number) + ASSERTION_TIMELOCK_BLOCKS;
-        assertionAdopters[contractAddress].assertions[assertionId].activationBlock = uint128(activationBlock);
+        uint256 activationBlock = block.number + ASSERTION_TIMELOCK_BLOCKS;
+        assertionAdopters[contractAddress].assertions[assertionId].activationBlock = activationBlock;
         assertionAdopters[contractAddress].assertionCount++;
         emit AssertionAdded(contractAddress, assertionId, activationBlock, daVerifier, metadata, proof);
     }
@@ -307,10 +307,10 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         require(
             assertionAdopters[contractAddress].assertions[assertionId].deactivationBlock == 0, AssertionAlreadyRemoved()
         );
-        assertionAdopters[contractAddress].assertions[assertionId].deactivationBlock =
-            uint128(block.number) + ASSERTION_TIMELOCK_BLOCKS;
+        uint256 deactivationBlock = block.number + ASSERTION_TIMELOCK_BLOCKS;
+        assertionAdopters[contractAddress].assertions[assertionId].deactivationBlock = deactivationBlock;
         assertionAdopters[contractAddress].assertionCount--;
-        emit AssertionRemoved(contractAddress, assertionId, uint256(block.number) + ASSERTION_TIMELOCK_BLOCKS);
+        emit AssertionRemoved(contractAddress, assertionId, deactivationBlock);
     }
 
     /// @notice Checks if an assertion is associated with an assertion adopter
@@ -330,7 +330,7 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     function getAssertionWindow(address contractAddress, bytes32 assertionId)
         public
         view
-        returns (uint128 activationBlock, uint128 deactivationBlock)
+        returns (uint256 activationBlock, uint256 deactivationBlock)
     {
         return (
             assertionAdopters[contractAddress].assertions[assertionId].activationBlock,

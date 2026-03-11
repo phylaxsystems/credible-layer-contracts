@@ -52,7 +52,7 @@ contract DeployCoreWithCreateX is DeployCore {
         return verifier;
     }
 
-    function _deployStateOracle(uint128 assertionTimelockBlocks, string memory contractName)
+    function _deployStateOracle(uint256 assertionTimelockBlocks, string memory contractName)
         internal
         override
         returns (address)

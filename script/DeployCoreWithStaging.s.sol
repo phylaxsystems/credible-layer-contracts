@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {DeployCore} from "./DeployCore.s.sol";
 
 contract DeployCoreWithStaging is DeployCore {
-    uint128 stagingAssertionTimelockBlocks;
+    uint256 stagingAssertionTimelockBlocks;
     uint16 stagingMaxAssertionsPerAA;
 
     address public deployedDAVerifier;
@@ -17,7 +17,7 @@ contract DeployCoreWithStaging is DeployCore {
 
         // Staging state oracle parameters
         stagingMaxAssertionsPerAA = uint16(vm.envUint("STAGING_STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
-        stagingAssertionTimelockBlocks = uint128(vm.envUint("STAGING_STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"));
+        stagingAssertionTimelockBlocks = vm.envUint("STAGING_STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS");
 
         assert(stagingAssertionTimelockBlocks > 0);
         assert(stagingMaxAssertionsPerAA > 0);

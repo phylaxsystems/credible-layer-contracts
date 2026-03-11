@@ -89,9 +89,9 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
         stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be added");
-        (uint128 activationBlock, uint128 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
+        (uint256 activationBlock, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
         assertEq(
-            activationBlock, uint128(block.number) + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Activation mismatch"
+            activationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Activation mismatch"
         );
         assertEq(deactivationBlock, 0, "Deactivation should be 0");
     }
@@ -113,9 +113,9 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
         stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should exist after add");
-        (uint128 activationBlock,) = stateOracle.getAssertionWindow(adopter, assertionId);
+        (uint256 activationBlock,) = stateOracle.getAssertionWindow(adopter, assertionId);
         assertEq(
-            activationBlock, uint128(block.number) + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Activation mismatch"
+            activationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Activation mismatch"
         );
 
         vm.roll(block.number + 1);
@@ -123,10 +123,10 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
         vm.prank(manager);
         stateOracle.removeAssertion(adopter, assertionId);
 
-        (, uint128 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
+        (, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
         assertEq(
             deactivationBlock,
-            uint128(block.number) + stateOracle.ASSERTION_TIMELOCK_BLOCKS(),
+            block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(),
             "Deactivation block mismatch"
         );
     }

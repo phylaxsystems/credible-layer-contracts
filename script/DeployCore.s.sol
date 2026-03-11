@@ -24,7 +24,7 @@ address constant PRECOMPILE_ADDRESS = 0x4461812e00718ff8D80929E3bF595AEaaa7b881E
 
 contract DeployCore is Script {
     address admin;
-    uint128 assertionTimelockBlocks;
+    uint256 assertionTimelockBlocks;
     uint16 maxAssertionsPerAA;
     address daProver;
     bool deployOwnerVerifier;
@@ -33,7 +33,7 @@ contract DeployCore is Script {
 
     function setUp() public virtual {
         maxAssertionsPerAA = uint16(vm.envUint("STATE_ORACLE_MAX_ASSERTIONS_PER_AA"));
-        assertionTimelockBlocks = uint128(vm.envUint("STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"));
+        assertionTimelockBlocks = vm.envUint("STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS");
         admin = vm.envAddress("STATE_ORACLE_ADMIN_ADDRESS");
         daProver = vm.envAddress("DA_PROVER_ADDRESS");
 
@@ -136,7 +136,7 @@ contract DeployCore is Script {
         }
     }
 
-    function _deployStateOracle(uint128 timelockBlocks, string memory contractName) internal virtual returns (address) {
+    function _deployStateOracle(uint256 timelockBlocks, string memory contractName) internal virtual returns (address) {
         address stateOracle = address(new StateOracle(timelockBlocks));
         console2.log(string.concat(contractName, " Implementation deployed at"), stateOracle);
         return stateOracle;
