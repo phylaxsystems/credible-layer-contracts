@@ -137,11 +137,17 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @notice The admin verification registry
     mapping(IAdminVerifier adminVerifier => bool isRegistered) public adminVerifiers;
 
-    /// @notice Whether the whitelist is enabled
-    bool public whitelistEnabled;
+    /// @notice The DA verification registry
+    mapping(IDAVerifier daVerifier => bool isRegistered) public daVerifiers;
 
     /// @notice Mapping of whitelisted addresses
     mapping(address => bool) public whitelist;
+
+    /// @notice Whether the whitelist is enabled
+    bool public whitelistEnabled;
+
+    /// @notice Maximum number of assertions per assertion adopter
+    uint16 public maxAssertionsPerAA;
 
     /// @notice Ensures caller is the manager of the contract
     /// @param contractAddress The address of the contract being managed
@@ -155,12 +161,6 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         _onlyWhitelisted();
         _;
     }
-
-    /// @notice Maximum number of assertions per assertion adopter
-    uint16 public maxAssertionsPerAA;
-
-    /// @notice The DA verification registry
-    mapping(IDAVerifier daVerifier => bool isRegistered) public daVerifiers;
 
     /// @notice Internal function to ensure caller is whitelisted when whitelist is enabled
     function _onlyWhitelisted() internal view {

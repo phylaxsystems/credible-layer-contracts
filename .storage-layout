@@ -41,15 +41,15 @@
       "type": "t_mapping(t_contract(IAdminVerifier)2524,t_bool)"
     },
     {
-      "astId": 1067,
+      "astId": 1070,
       "contract": "src/StateOracle.sol:StateOracle",
-      "label": "whitelistEnabled",
+      "label": "daVerifiers",
       "offset": 0,
       "slot": "5",
-      "type": "t_bool"
+      "type": "t_mapping(t_contract(IDAVerifier)2553,t_bool)"
     },
     {
-      "astId": 1072,
+      "astId": 1075,
       "contract": "src/StateOracle.sol:StateOracle",
       "label": "whitelist",
       "offset": 0,
@@ -57,20 +57,20 @@
       "type": "t_mapping(t_address,t_bool)"
     },
     {
-      "astId": 1094,
+      "astId": 1078,
       "contract": "src/StateOracle.sol:StateOracle",
-      "label": "maxAssertionsPerAA",
+      "label": "whitelistEnabled",
       "offset": 0,
       "slot": "7",
-      "type": "t_uint16"
+      "type": "t_bool"
     },
     {
-      "astId": 1100,
+      "astId": 1081,
       "contract": "src/StateOracle.sol:StateOracle",
-      "label": "daVerifiers",
-      "offset": 0,
-      "slot": "8",
-      "type": "t_mapping(t_contract(IDAVerifier)2553,t_bool)"
+      "label": "maxAssertionsPerAA",
+      "offset": 1,
+      "slot": "7",
+      "type": "t_uint16"
     }
   ],
   "types": {
