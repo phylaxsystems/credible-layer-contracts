@@ -40,7 +40,7 @@ contract StateOracleWithDAVerifierECDSATest is StateOracleBase {
     function testFuzz_addAssertionWithECDSAProof(bytes32 assertionId, bytes calldata metadata) public {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PROVER, assertionId);
         bytes memory signature = abi.encodePacked(r, s, v);
-        stateOracle.addAssertion(address(adopter), ecdsaDAVerifier, assertionId, metadata, signature);
+        stateOracle.addAssertion(address(adopter), assertionId, ecdsaDAVerifier, metadata, signature);
         vm.stopPrank();
 
         assertTrue(stateOracle.hasAssertion(address(adopter), assertionId), "Assertion should have been added");
@@ -58,7 +58,7 @@ contract StateOracleWithDAVerifierECDSATest is StateOracleBase {
         bytes memory signature = abi.encodePacked(r, s, v);
 
         vm.expectRevert(abi.encodeWithSelector(StateOracle.InvalidDAProof.selector, ecdsaDAVerifier));
-        stateOracle.addAssertion(address(adopter), ecdsaDAVerifier, assertionId, metadata, signature);
+        stateOracle.addAssertion(address(adopter), assertionId, ecdsaDAVerifier, metadata, signature);
         vm.stopPrank();
     }
 }

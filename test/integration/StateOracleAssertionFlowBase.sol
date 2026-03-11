@@ -86,7 +86,7 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
             _generateValidAssertion(bytes32(uint256(0xCAFE)));
 
         vm.prank(manager);
-        stateOracle.addAssertion(adopter, daVerifier, assertionId, metadata, proof);
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be added");
         (uint128 activationBlock, uint128 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
@@ -102,7 +102,7 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
 
         vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(StateOracle.InvalidDAProof.selector, daVerifier));
-        stateOracle.addAssertion(adopter, daVerifier, assertionId, metadata, proof);
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
     }
 
     function test_addAndRemoveAssertion() public {
@@ -110,7 +110,7 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
             _generateValidAssertion(bytes32(uint256(0x1111)));
 
         vm.prank(manager);
-        stateOracle.addAssertion(adopter, daVerifier, assertionId, metadata, proof);
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should exist after add");
         (uint128 activationBlock,) = stateOracle.getAssertionWindow(adopter, assertionId);
@@ -136,8 +136,8 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
         (bytes32 id2, bytes memory meta2, bytes memory proof2) = _generateValidAssertion(bytes32(uint256(2)));
 
         vm.startPrank(manager);
-        stateOracle.addAssertion(adopter, daVerifier, id1, meta1, proof1);
-        stateOracle.addAssertion(adopter, daVerifier, id2, meta2, proof2);
+        stateOracle.addAssertion(adopter, id1, daVerifier, meta1, proof1);
+        stateOracle.addAssertion(adopter, id2, daVerifier, meta2, proof2);
         vm.stopPrank();
 
         assertTrue(stateOracle.hasAssertion(adopter, id1), "Assertion 1 should exist");
@@ -149,7 +149,7 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
         (bytes32 assertionId, bytes memory metadata, bytes memory proof) = _generateValidAssertion(seed);
 
         vm.prank(manager);
-        stateOracle.addAssertion(adopter, daVerifier, assertionId, metadata, proof);
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be added");
     }
@@ -162,9 +162,9 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
 
         // Check topic1: adopter, topic2: assertionId, topic3: daVerifier, data: activationBlock, metadata, proof
         vm.expectEmit(true, true, true, true, address(stateOracle));
-        emit StateOracle.AssertionAdded(adopter, assertionId, daVerifier, activationBlock, metadata, proof);
+        emit StateOracle.AssertionAdded(adopter, assertionId, activationBlock, daVerifier, metadata, proof);
 
         vm.prank(manager);
-        stateOracle.addAssertion(adopter, daVerifier, assertionId, metadata, proof);
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
     }
 }

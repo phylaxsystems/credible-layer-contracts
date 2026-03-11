@@ -69,7 +69,7 @@ contract StateOracleBase is Test, ProxyHelper {
 
     function addAssertionAndAssert(address manager, address adopter, bytes32 assertionId) internal noAdmin(manager) {
         vm.prank(manager);
-        stateOracle.addAssertion(adopter, daVerifierMock, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(adopter, assertionId, daVerifierMock, new bytes(0), new bytes(0));
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion not found");
         (uint128 activationBlock, uint128 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
@@ -169,7 +169,7 @@ contract AddAssertion is StateOracleBase {
         vm.assume(unauthorizedManager != manager);
         vm.prank(unauthorizedManager);
         vm.expectRevert(StateOracleAccessControl.UnauthorizedManager.selector);
-        stateOracle.addAssertion(adopter, daVerifierMock, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(adopter, assertionId, daVerifierMock, new bytes(0), new bytes(0));
     }
 
     function testFuzz_RevertIf_addDuplicateAssertion(bytes32 assertionId) public {
@@ -178,7 +178,7 @@ contract AddAssertion is StateOracleBase {
 
         vm.prank(manager);
         vm.expectRevert(StateOracle.AssertionAlreadyExists.selector);
-        stateOracle.addAssertion(adopter, daVerifierMock, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(adopter, assertionId, daVerifierMock, new bytes(0), new bytes(0));
     }
 
     function testFuzz_addMultipleAssertions(bytes32 assertionId1, bytes32 assertionId2) public {
@@ -191,7 +191,7 @@ contract AddAssertion is StateOracleBase {
     function testFuzz_RevertIf_addAssertionNotRegistered(address adopter, bytes32 assertionId) public {
         vm.prank(address(1));
         vm.expectRevert(StateOracle.AssertionAdopterNotRegistered.selector);
-        stateOracle.addAssertion(adopter, daVerifierMock, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(adopter, assertionId, daVerifierMock, new bytes(0), new bytes(0));
     }
 
     function testFuzz_expectAssertionAdded(bytes32 assertionId) public {
@@ -200,7 +200,7 @@ contract AddAssertion is StateOracleBase {
         // Check topic1: adopter, topic2: assertionId, topic3: daVerifier, data: activationBlock, metadata, proof
         vm.expectEmit(true, true, true, true, address(stateOracle));
         emit StateOracle.AssertionAdded(
-            adopter, assertionId, daVerifierMock, activationBlock, new bytes(0), new bytes(0)
+            adopter, assertionId, activationBlock, daVerifierMock, new bytes(0), new bytes(0)
         );
         addAssertionAndAssert(manager, adopter, assertionId);
     }
@@ -213,7 +213,7 @@ contract AddAssertion is StateOracleBase {
         }
         vm.startPrank(manager);
         vm.expectRevert(StateOracle.TooManyAssertions.selector);
-        stateOracle.addAssertion(adopter, daVerifierMock, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(adopter, assertionId, daVerifierMock, new bytes(0), new bytes(0));
         stateOracle.removeAssertion(adopter, bytes32(uint256(MAX_ASSERTIONS_PER_AA - 1)));
         vm.stopPrank();
 
@@ -225,7 +225,7 @@ contract AddAssertion is StateOracleBase {
         IDAVerifier unregisteredVerifier = IDAVerifier(address(0x9999));
         vm.prank(manager);
         vm.expectRevert(StateOracle.DAVerifierNotRegistered.selector);
-        stateOracle.addAssertion(adopter, unregisteredVerifier, bytes32(uint256(1)), new bytes(0), new bytes(0));
+        stateOracle.addAssertion(adopter, bytes32(uint256(1)), unregisteredVerifier, new bytes(0), new bytes(0));
     }
 }
 
@@ -676,10 +676,10 @@ contract Batch is StateOracleBase {
         calls[0] =
             abi.encodeWithSelector(StateOracle.registerAssertionAdopter.selector, adopter, adminVerifier, new bytes(0));
         calls[1] = abi.encodeWithSelector(
-            StateOracle.addAssertion.selector, adopter, daVerifierMock, assertionId1, new bytes(0), new bytes(0)
+            StateOracle.addAssertion.selector, adopter, assertionId1, daVerifierMock, new bytes(0), new bytes(0)
         );
         calls[2] = abi.encodeWithSelector(
-            StateOracle.addAssertion.selector, adopter, daVerifierMock, assertionId2, new bytes(0), new bytes(0)
+            StateOracle.addAssertion.selector, adopter, assertionId2, daVerifierMock, new bytes(0), new bytes(0)
         );
 
         vm.prank(OWNER);
@@ -751,7 +751,7 @@ contract SetMaxAssertionsPerAA is StateOracleBase {
         bytes32 newAssertionId = keccak256("newAssertion");
         vm.prank(OWNER);
         vm.expectRevert(StateOracle.TooManyAssertions.selector);
-        stateOracle.addAssertion(adopter, daVerifierMock, newAssertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(adopter, newAssertionId, daVerifierMock, new bytes(0), new bytes(0));
     }
 }
 
@@ -1135,7 +1135,7 @@ contract AddAssertionWithWhitelist is WhitelistBase {
 
         // USER1 adds assertion
         vm.prank(USER1);
-        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), assertionId, daVerifierMock, new bytes(0), new bytes(0));
 
         assertTrue(stateOracle.hasAssertion(address(adopter), assertionId), "Assertion should be added");
     }
@@ -1158,7 +1158,7 @@ contract AddAssertionWithWhitelist is WhitelistBase {
         // USER1 tries to add assertion but is not whitelisted
         vm.prank(USER1);
         vm.expectRevert(StateOracle.NotWhitelisted.selector);
-        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), assertionId, daVerifierMock, new bytes(0), new bytes(0));
     }
 
     function test_addAssertionWhenWhitelistDisabled() public {
@@ -1176,7 +1176,7 @@ contract AddAssertionWithWhitelist is WhitelistBase {
 
         // USER1 adds assertion
         vm.prank(USER1);
-        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), assertionId, daVerifierMock, new bytes(0), new bytes(0));
 
         assertTrue(stateOracle.hasAssertion(address(adopter), assertionId), "Assertion should be added");
     }
@@ -1197,7 +1197,7 @@ contract RemoveAssertionWithWhitelist is WhitelistBase {
 
         // USER1 adds assertion
         vm.prank(USER1);
-        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), assertionId, daVerifierMock, new bytes(0), new bytes(0));
 
         // Remove USER1 from whitelist
         vm.prank(STATE_ORACLE_ADMIN);
@@ -1364,7 +1364,7 @@ contract OwnerOnlyFunctionsRemainProtected is OperatorRoleBase {
         OwnableAdopter adopter = new OwnableAdopter(USER1);
         stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
         bytes32 assertionId = keccak256("assertion1");
-        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), assertionId, daVerifierMock, new bytes(0), new bytes(0));
         vm.stopPrank();
 
         vm.roll(block.number + 1);
@@ -1529,7 +1529,7 @@ contract GuardianEmergencyActions is GuardianRoleBase {
         OwnableAdopter adopter = new OwnableAdopter(USER1);
         stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
         bytes32 assertionId = keccak256("assertion1");
-        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), assertionId, daVerifierMock, new bytes(0), new bytes(0));
         vm.stopPrank();
 
         (uint128 activationBlockBefore,) = stateOracle.getAssertionWindow(address(adopter), assertionId);
@@ -1792,7 +1792,7 @@ contract OperatorAdminCanManageOperators is OperatorRoleBase {
         OwnableAdopter adopter = new OwnableAdopter(USER1);
         stateOracle.registerAssertionAdopter(address(adopter), adminVerifier, new bytes(0));
         bytes32 assertionId = keccak256("assertion1");
-        stateOracle.addAssertion(address(adopter), daVerifierMock, assertionId, new bytes(0), new bytes(0));
+        stateOracle.addAssertion(address(adopter), assertionId, daVerifierMock, new bytes(0), new bytes(0));
         vm.stopPrank();
 
         vm.roll(block.number + 1);

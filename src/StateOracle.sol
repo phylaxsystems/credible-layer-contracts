@@ -98,15 +98,15 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @notice Emitted when a new assertion is added
     /// @param assertionAdopter The assertion adopter the assertion is associated with
     /// @param assertionId The unique identifier of the assertion
-    /// @param daVerifier The DA verifier used to verify the proof
     /// @param activationBlock The block number when the assertion becomes active
+    /// @param daVerifier The DA verifier used to verify the proof
     /// @param metadata The metadata used for verification
     /// @param proof The proof used for verification
     event AssertionAdded(
         address indexed assertionAdopter,
         bytes32 indexed assertionId,
-        IDAVerifier indexed daVerifier,
         uint256 activationBlock,
+        IDAVerifier indexed daVerifier,
         bytes metadata,
         bytes proof
     );
@@ -226,14 +226,14 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @dev An assertion ID can be added only once. If removed (inactive),
     /// it cannot be re-added - attempting to reuse the same ID will revert.
     /// @param contractAddress The address of the assertion adopter
-    /// @param daVerifier The DA verifier to use for proof verification
     /// @param assertionId The unique identifier for the assertion
+    /// @param daVerifier The DA verifier to use for proof verification
     /// @param metadata Needed to verify the proof
     /// @param proof The data availability proof for the assertion
     function addAssertion(
         address contractAddress,
-        IDAVerifier daVerifier,
         bytes32 assertionId,
+        IDAVerifier daVerifier,
         bytes calldata metadata,
         bytes calldata proof
     ) external onlyManager(contractAddress) onlyWhitelisted {
@@ -245,7 +245,7 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         uint256 activationBlock = uint256(block.number) + ASSERTION_TIMELOCK_BLOCKS;
         assertionAdopters[contractAddress].assertions[assertionId].activationBlock = uint128(activationBlock);
         assertionAdopters[contractAddress].assertionCount++;
-        emit AssertionAdded(contractAddress, assertionId, daVerifier, activationBlock, metadata, proof);
+        emit AssertionAdded(contractAddress, assertionId, activationBlock, daVerifier, metadata, proof);
     }
 
     /// @notice Removes an assertion from an assertion adopter
