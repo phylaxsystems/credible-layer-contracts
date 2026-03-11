@@ -45,8 +45,7 @@ contract DeployCoreWithStaging is DeployCore {
 
         // Staging oracle
         address stagingOracle = _deployStateOracle(stagingAssertionTimelockBlocks, "Staging State Oracle");
-        deployedStagingOracle = _deployStateOracleProxy(
-            stagingOracle, deployedAdminVerifiers, daVerifiers, stagingMaxAssertionsPerAA
-        );
+        deployedStagingOracle =
+            _deployStateOracleProxy(stagingOracle, deployedAdminVerifiers, daVerifiers, stagingMaxAssertionsPerAA);
     }
 }

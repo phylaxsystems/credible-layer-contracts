@@ -90,9 +90,7 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be added");
         (uint256 activationBlock, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
-        assertEq(
-            activationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Activation mismatch"
-        );
+        assertEq(activationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Activation mismatch");
         assertEq(deactivationBlock, 0, "Deactivation should be 0");
     }
 
@@ -114,9 +112,7 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should exist after add");
         (uint256 activationBlock,) = stateOracle.getAssertionWindow(adopter, assertionId);
-        assertEq(
-            activationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Activation mismatch"
-        );
+        assertEq(activationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Activation mismatch");
 
         vm.roll(block.number + 1);
 
@@ -125,9 +121,7 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
 
         (, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
         assertEq(
-            deactivationBlock,
-            block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(),
-            "Deactivation block mismatch"
+            deactivationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Deactivation block mismatch"
         );
     }
 

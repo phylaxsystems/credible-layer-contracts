@@ -203,16 +203,12 @@ contract DeployCoreWithStagingIntegrationTest is Test {
         // Add assertion using OnChain DA verifier on production
         bytes memory proof = abi.encode(uint256(42));
         bytes32 assertionId = keccak256(proof);
-        productionOracle.addAssertion(
-            address(adopter), assertionId, IDAVerifier(address(onChainVerifier)), "", proof
-        );
+        productionOracle.addAssertion(address(adopter), assertionId, IDAVerifier(address(onChainVerifier)), "", proof);
 
         // Add assertion using OnChain DA verifier on staging (different assertion)
         bytes memory proof2 = abi.encode(uint256(43));
         bytes32 assertionId2 = keccak256(proof2);
-        stagingOracle.addAssertion(
-            address(adopter), assertionId2, IDAVerifier(address(onChainVerifier)), "", proof2
-        );
+        stagingOracle.addAssertion(address(adopter), assertionId2, IDAVerifier(address(onChainVerifier)), "", proof2);
 
         vm.stopPrank();
 
