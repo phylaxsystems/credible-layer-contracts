@@ -8,6 +8,7 @@ contract DeployCoreWithStaging is DeployCore {
     uint16 stagingMaxAssertionsPerAA;
 
     address public deployedDAVerifier;
+    address public deployedDAVerifierOnChain;
     address[] public deployedAdminVerifiers;
     address public deployedProductionOracle;
     address public deployedStagingOracle;
@@ -27,28 +28,25 @@ contract DeployCoreWithStaging is DeployCore {
         // Fund persistent accounts with 1 wei if empty
         _fundPersistentAccounts();
 
-        // Deploy shared DA Verifier (ECDSA)
+        // Deploy shared verifiers
         deployedDAVerifier = _deployDAVerifier();
-        // Deploy shared Admin Verifiers
+        deployedDAVerifierOnChain = _deployDAVerifierOnChain();
         deployedAdminVerifiers = _deployAdminVerifiers();
 
+        // Shared DA verifier list for both oracles
+        address[] memory daVerifiers = new address[](2);
+        daVerifiers[0] = deployedDAVerifier;
+        daVerifiers[1] = deployedDAVerifierOnChain;
+
         // Production oracle
-        address prodDAVerifierOnChain = _deployDAVerifierOnChain();
         address stateOracle = _deployStateOracle(assertionTimelockBlocks, "State Oracle");
-        address[] memory prodDAVerifiers = new address[](2);
-        prodDAVerifiers[0] = deployedDAVerifier;
-        prodDAVerifiers[1] = prodDAVerifierOnChain;
         deployedProductionOracle =
-            _deployStateOracleProxy(stateOracle, deployedAdminVerifiers, prodDAVerifiers, maxAssertionsPerAA);
+            _deployStateOracleProxy(stateOracle, deployedAdminVerifiers, daVerifiers, maxAssertionsPerAA);
 
         // Staging oracle
-        address stagingDAVerifierOnChain = _deployDAVerifierOnChain();
         address stagingOracle = _deployStateOracle(stagingAssertionTimelockBlocks, "Staging State Oracle");
-        address[] memory stagingDAVerifiers = new address[](2);
-        stagingDAVerifiers[0] = deployedDAVerifier;
-        stagingDAVerifiers[1] = stagingDAVerifierOnChain;
         deployedStagingOracle = _deployStateOracleProxy(
-            stagingOracle, deployedAdminVerifiers, stagingDAVerifiers, stagingMaxAssertionsPerAA
+            stagingOracle, deployedAdminVerifiers, daVerifiers, stagingMaxAssertionsPerAA
         );
     }
 }
