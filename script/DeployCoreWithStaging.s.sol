@@ -7,7 +7,7 @@ contract DeployCoreWithStaging is DeployCore {
     uint256 stagingAssertionTimelockBlocks;
     uint16 stagingMaxAssertionsPerAA;
 
-    address public deployedDAVerifier;
+    address public deployedDAVerifierECDSA;
     address public deployedDAVerifierOnChain;
     address[] public deployedAdminVerifiers;
     address public deployedProductionOracle;
@@ -29,13 +29,13 @@ contract DeployCoreWithStaging is DeployCore {
         _fundPersistentAccounts();
 
         // Deploy shared verifiers
-        deployedDAVerifier = _deployDAVerifier();
+        deployedDAVerifierECDSA = _deployDAVerifierECDSA();
         deployedDAVerifierOnChain = _deployDAVerifierOnChain();
         deployedAdminVerifiers = _deployAdminVerifiers();
 
         // Shared DA verifier list for both oracles
         address[] memory daVerifiers = new address[](2);
-        daVerifiers[0] = deployedDAVerifier;
+        daVerifiers[0] = deployedDAVerifierECDSA;
         daVerifiers[1] = deployedDAVerifierOnChain;
 
         // Production oracle

@@ -14,7 +14,7 @@ import {DeployCore} from "./DeployCore.s.sol";
 import {console2} from "forge-std/console2.sol";
 
 contract DeployCoreWithCreateX is DeployCore {
-    string public constant SALT_DA_VERIFIER_NAME = "credible-layer-da-verifier-ecdsa";
+    string public constant SALT_DA_VERIFIER_ECDSA_NAME = "credible-layer-da-verifier-ecdsa";
     string public constant SALT_DA_VERIFIER_ONCHAIN_NAME = "credible-layer-da-verifier-onchain";
     string public constant SALT_ADMIN_VERIFIER_OWNER_NAME = "credible-layer-admin-verifier-owner";
     string public constant SALT_ADMIN_VERIFIER_WHITELIST_NAME = "credible-layer-admin-verifier-whitelist";
@@ -23,9 +23,9 @@ contract DeployCoreWithCreateX is DeployCore {
 
     ICreateX internal constant CREATE_X = ICreateX(CREATE_X_ADDRESS);
 
-    function _deployDAVerifier() internal override returns (address) {
+    function _deployDAVerifierECDSA() internal override returns (address) {
         address daVerifier = deployCreate3(
-            SALT_DA_VERIFIER_NAME, abi.encodePacked(type(DAVerifierECDSA).creationCode, abi.encode(daProver))
+            SALT_DA_VERIFIER_ECDSA_NAME, abi.encodePacked(type(DAVerifierECDSA).creationCode, abi.encode(daProver))
         );
         console2.log("DA Verifier (ECDSA) deployed at", daVerifier);
         return daVerifier;

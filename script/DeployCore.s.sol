@@ -58,7 +58,7 @@ contract DeployCore is Script {
         _fundPersistentAccounts();
 
         // Deploy DA Verifiers
-        address daVerifier = _deployDAVerifier();
+        address daVerifierECDSA = _deployDAVerifierECDSA();
         address daVerifierOnChain = _deployDAVerifierOnChain();
         // Deploy Admin Verifiers
         address[] memory adminVerifierDeployments = _deployAdminVerifiers();
@@ -68,17 +68,13 @@ contract DeployCore is Script {
 
         // Deploy State Oracle Proxy
         address[] memory daVerifierAddresses = new address[](2);
-        daVerifierAddresses[0] = daVerifier;
+        daVerifierAddresses[0] = daVerifierECDSA;
         daVerifierAddresses[1] = daVerifierOnChain;
         _deployStateOracleProxy(stateOracle, adminVerifierDeployments, daVerifierAddresses, maxAssertionsPerAA);
     }
 
-    function deployDAVerifier() public broadcast {
-        _deployDAVerifier();
-    }
-
-    function deployDAVerifierOnChain() public broadcast {
-        _deployDAVerifierOnChain();
+    function deployDAVerifierECDSA() public broadcast {
+        _deployDAVerifierECDSA();
     }
 
     function deployAdminVerifiers() public broadcast {
@@ -110,10 +106,10 @@ contract DeployCore is Script {
         _fundPersistentAccounts();
     }
 
-    function _deployDAVerifier() internal virtual returns (address) {
-        address daVerifier = address(new DAVerifierECDSA(daProver));
-        console2.log("DA Verifier (ECDSA) deployed at", daVerifier);
-        return daVerifier;
+    function _deployDAVerifierECDSA() internal virtual returns (address) {
+        address daVerifierECDSA = address(new DAVerifierECDSA(daProver));
+        console2.log("DA Verifier (ECDSA) deployed at", daVerifierECDSA);
+        return daVerifierECDSA;
     }
 
     function _deployDAVerifierOnChain() internal virtual returns (address) {
