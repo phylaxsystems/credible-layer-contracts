@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.28;
 
-import {Ownable} from "solady/auth/Ownable.sol";
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IAdminVerifier} from "../../interfaces/IAdminVerifier.sol";
 
 /// @title AdminVerifierWhitelist
-/// @notice Verifies administrators against an owner-managed whitelist with optional self-controlled exclusions.
-contract AdminVerifierWhitelist is Ownable, IAdminVerifier {
+/// @notice Verifies administrators against a role-managed whitelist with optional self-controlled exclusions.
+contract AdminVerifierWhitelist is AccessControl, IAdminVerifier {
     /// -----------------------------------------------------------------------
     /// Errors
     /// -----------------------------------------------------------------------
@@ -17,6 +17,8 @@ contract AdminVerifierWhitelist is Ownable, IAdminVerifier {
     error InvalidReleaser();
     error NoExclusion();
     error NotExclusionReleaser();
+
+    bytes32 public constant WHITELIST_ADMIN_ROLE = keccak256("WHITELIST_ADMIN_ROLE");
 
     /// @dev Maps assertion adopters to the admin address they authorize.
     mapping(address assertionAdopter => address admin) public whitelist;
@@ -29,14 +31,29 @@ contract AdminVerifierWhitelist is Ownable, IAdminVerifier {
     event ExclusionAdded(address indexed assertionAdopter, address indexed releaser);
     event ExclusionReleased(address indexed assertionAdopter);
 
-    constructor(address admin) {
-        _initializeOwner(admin);
+    constructor(address defaultAdmin) {
+        _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
+        _grantRole(WHITELIST_ADMIN_ROLE, defaultAdmin);
+    }
+
+    /// @notice Grants the whitelist admin role to an address.
+    /// @dev Only callable by the default admin.
+    /// @param whitelistAdmin The address to grant the whitelist admin role to.
+    function grantWhitelistAdminRole(address whitelistAdmin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _grantRole(WHITELIST_ADMIN_ROLE, whitelistAdmin);
+    }
+
+    /// @notice Revokes the whitelist admin role from an address.
+    /// @dev Only callable by the default admin.
+    /// @param whitelistAdmin The address to revoke the whitelist admin role from.
+    function revokeWhitelistAdminRole(address whitelistAdmin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _revokeRole(WHITELIST_ADMIN_ROLE, whitelistAdmin);
     }
 
     /// @notice Adds an admin to the whitelist for a specific assertion adopter.
     /// @param assertionAdopter The address of the assertion adopter contract.
     /// @param admin The admin address to be verified.
-    function addToWhitelist(address assertionAdopter, address admin) external onlyOwner {
+    function addToWhitelist(address assertionAdopter, address admin) external onlyRole(WHITELIST_ADMIN_ROLE) {
         if (assertionAdopter == address(0) || admin == address(0)) revert InvalidAssertionAdopter();
         if (exclusions[assertionAdopter] != address(0)) revert AddressExcluded();
         if (whitelist[assertionAdopter] != address(0)) revert AlreadyWhitelisted();
@@ -48,7 +65,7 @@ contract AdminVerifierWhitelist is Ownable, IAdminVerifier {
     /// @notice Removes an admin for a specific assertion adopter from the whitelist.
     /// @param assertionAdopter The address of the assertion adopter contract.
     /// @param admin The admin address to be removed from the whitelist.
-    function removeFromWhitelist(address assertionAdopter, address admin) external onlyOwner {
+    function removeFromWhitelist(address assertionAdopter, address admin) external onlyRole(WHITELIST_ADMIN_ROLE) {
         if (whitelist[assertionAdopter] != admin) revert NotWhitelisted();
         _removeFromWhitelist(assertionAdopter, admin);
     }
@@ -64,7 +81,7 @@ contract AdminVerifierWhitelist is Ownable, IAdminVerifier {
     /// @notice Excludes the admin for a specific assertion adopter until the releaser clears it.
     /// @param assertionAdopter The adopter address to exclude from whitelisting.
     /// @param releaser The address allowed to lift the exclusion.
-    function exclude(address assertionAdopter, address releaser) external onlyOwner {
+    function exclude(address assertionAdopter, address releaser) external onlyRole(WHITELIST_ADMIN_ROLE) {
         if (assertionAdopter == address(0)) revert InvalidAssertionAdopter();
         if (releaser == address(0)) revert InvalidReleaser();
 
@@ -110,4 +127,3 @@ contract AdminVerifierWhitelist is Ownable, IAdminVerifier {
         return whitelist[assertionAdopter] == admin;
     }
 }
-
