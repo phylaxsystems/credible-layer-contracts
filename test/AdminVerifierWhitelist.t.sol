@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: CC0-1.0
 pragma solidity ^0.8.28;
 
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {Test} from "forge-std/Test.sol";
 import {AdminVerifierWhitelist} from "../src/verification/admin/AdminVerifierWhitelist.sol";
 
 contract AdminVerifierWhitelistTest is Test {
     AdminVerifierWhitelist verifier;
-    address constant OWNER = address(uint160(uint256(keccak256(abi.encode("pcl.test.AdminVerifierWhitelist.OWNER")))));
+    bytes32 constant DEFAULT_ADMIN_ROLE = 0x00;
+    bytes32 constant WHITELIST_ADMIN_ROLE = keccak256("WHITELIST_ADMIN_ROLE");
+    address constant DEFAULT_ADMIN =
+        address(uint160(uint256(keccak256(abi.encode("pcl.test.AdminVerifierWhitelist.DEFAULT_ADMIN")))));
     address constant ADOPTER =
         address(uint160(uint256(keccak256(abi.encode("pcl.test.AdminVerifierWhitelist.ADOPTER")))));
     address constant ADMIN = address(uint160(uint256(keccak256(abi.encode("pcl.test.AdminVerifierWhitelist.ADMIN")))));
@@ -14,13 +18,20 @@ contract AdminVerifierWhitelistTest is Test {
         address(uint160(uint256(keccak256(abi.encode("pcl.test.AdminVerifierWhitelist.RELEASER")))));
     address constant OTHER_ADMIN =
         address(uint160(uint256(keccak256(abi.encode("pcl.test.AdminVerifierWhitelist.OTHER_ADMIN")))));
+    address constant UNAUTHORIZED =
+        address(uint160(uint256(keccak256(abi.encode("pcl.test.AdminVerifierWhitelist.UNAUTHORIZED")))));
 
     function setUp() public {
-        verifier = new AdminVerifierWhitelist(OWNER);
+        verifier = new AdminVerifierWhitelist(DEFAULT_ADMIN);
+    }
+
+    function test_constructorBootstrapsDefaultAdminAndWhitelistAdminRoles() public view {
+        assertTrue(verifier.hasRole(DEFAULT_ADMIN_ROLE, DEFAULT_ADMIN));
+        assertTrue(verifier.hasRole(WHITELIST_ADMIN_ROLE, DEFAULT_ADMIN));
     }
 
     function test_addToWhitelist() public {
-        vm.prank(OWNER);
+        vm.prank(DEFAULT_ADMIN);
         verifier.addToWhitelist(ADOPTER, ADMIN);
 
         assertEq(verifier.whitelist(ADOPTER), ADMIN);
@@ -28,19 +39,19 @@ contract AdminVerifierWhitelistTest is Test {
     }
 
     function test_RevertIf_addToWhitelistWithZeroAdmin() public {
-        vm.prank(OWNER);
+        vm.prank(DEFAULT_ADMIN);
         vm.expectRevert(AdminVerifierWhitelist.InvalidAssertionAdopter.selector);
         verifier.addToWhitelist(ADOPTER, address(0));
     }
 
     function test_RevertIf_addToWhitelistWithZeroAdopter() public {
-        vm.prank(OWNER);
+        vm.prank(DEFAULT_ADMIN);
         vm.expectRevert(AdminVerifierWhitelist.InvalidAssertionAdopter.selector);
         verifier.addToWhitelist(address(0), ADMIN);
     }
 
     function test_RevertIf_addToWhitelistAlreadyWhitelisted() public {
-        vm.startPrank(OWNER);
+        vm.startPrank(DEFAULT_ADMIN);
         verifier.addToWhitelist(ADOPTER, ADMIN);
         vm.expectRevert(AdminVerifierWhitelist.AlreadyWhitelisted.selector);
         verifier.addToWhitelist(ADOPTER, OTHER_ADMIN);
@@ -48,15 +59,25 @@ contract AdminVerifierWhitelistTest is Test {
     }
 
     function test_RevertIf_addToWhitelistWhileExcluded() public {
-        vm.startPrank(OWNER);
+        vm.startPrank(DEFAULT_ADMIN);
         verifier.exclude(ADOPTER, RELEASER);
         vm.expectRevert(AdminVerifierWhitelist.AddressExcluded.selector);
         verifier.addToWhitelist(ADOPTER, ADMIN);
         vm.stopPrank();
     }
 
+    function test_RevertIf_addToWhitelistWithoutWhitelistAdminRole() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, UNAUTHORIZED, WHITELIST_ADMIN_ROLE
+            )
+        );
+        vm.prank(UNAUTHORIZED);
+        verifier.addToWhitelist(ADOPTER, ADMIN);
+    }
+
     function test_removeFromWhitelist() public {
-        vm.startPrank(OWNER);
+        vm.startPrank(DEFAULT_ADMIN);
         verifier.addToWhitelist(ADOPTER, ADMIN);
         verifier.removeFromWhitelist(ADOPTER, ADMIN);
         vm.stopPrank();
@@ -66,13 +87,13 @@ contract AdminVerifierWhitelistTest is Test {
     }
 
     function test_RevertIf_removeFromWhitelistNotWhitelisted() public {
-        vm.prank(OWNER);
+        vm.prank(DEFAULT_ADMIN);
         vm.expectRevert(AdminVerifierWhitelist.NotWhitelisted.selector);
         verifier.removeFromWhitelist(ADOPTER, ADMIN);
     }
 
     function test_excludeRemovesExistingWhitelist() public {
-        vm.startPrank(OWNER);
+        vm.startPrank(DEFAULT_ADMIN);
         verifier.addToWhitelist(ADOPTER, ADMIN);
         verifier.exclude(ADOPTER, RELEASER);
         vm.stopPrank();
@@ -82,7 +103,7 @@ contract AdminVerifierWhitelistTest is Test {
     }
 
     function test_excludeRemovesWhitelistEntry() public {
-        vm.startPrank(OWNER);
+        vm.startPrank(DEFAULT_ADMIN);
         verifier.addToWhitelist(ADOPTER, ADMIN);
         verifier.exclude(ADOPTER, RELEASER);
         vm.stopPrank();
@@ -93,13 +114,13 @@ contract AdminVerifierWhitelistTest is Test {
     }
 
     function test_RevertIf_excludeWithInvalidReleaser() public {
-        vm.prank(OWNER);
+        vm.prank(DEFAULT_ADMIN);
         vm.expectRevert(AdminVerifierWhitelist.InvalidReleaser.selector);
         verifier.exclude(ADOPTER, address(0));
     }
 
     function test_releaseExclusionByReleaser() public {
-        vm.startPrank(OWNER);
+        vm.startPrank(DEFAULT_ADMIN);
         verifier.exclude(ADOPTER, RELEASER);
         vm.stopPrank();
 
@@ -112,7 +133,7 @@ contract AdminVerifierWhitelistTest is Test {
     function test_RevertIf_releaseExclusionByNonReleaser(address nonReleaser) public {
         vm.assume(nonReleaser != RELEASER && nonReleaser != address(0));
 
-        vm.prank(OWNER);
+        vm.prank(DEFAULT_ADMIN);
         verifier.exclude(ADOPTER, RELEASER);
 
         vm.prank(nonReleaser);
@@ -126,15 +147,63 @@ contract AdminVerifierWhitelistTest is Test {
     }
 
     function test_verifyAdmin() public {
-        vm.prank(OWNER);
+        vm.prank(DEFAULT_ADMIN);
         verifier.addToWhitelist(ADOPTER, ADMIN);
 
         assertTrue(verifier.verifyAdmin(ADOPTER, ADMIN, ""));
         assertFalse(verifier.verifyAdmin(ADOPTER, OTHER_ADMIN, ""));
 
-        vm.prank(OWNER);
+        vm.prank(DEFAULT_ADMIN);
         verifier.exclude(ADOPTER, RELEASER);
 
         assertFalse(verifier.verifyAdmin(ADOPTER, ADMIN, ""));
+    }
+
+    function test_defaultAdminCanGrantWhitelistAdminRole() public {
+        vm.prank(DEFAULT_ADMIN);
+        verifier.grantWhitelistAdminRole(OTHER_ADMIN);
+
+        vm.prank(OTHER_ADMIN);
+        verifier.addToWhitelist(ADOPTER, ADMIN);
+
+        assertEq(verifier.whitelist(ADOPTER), ADMIN);
+    }
+
+    function test_defaultAdminCanRevokeWhitelistAdminRole() public {
+        vm.startPrank(DEFAULT_ADMIN);
+        verifier.grantWhitelistAdminRole(OTHER_ADMIN);
+        verifier.revokeWhitelistAdminRole(OTHER_ADMIN);
+        vm.stopPrank();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, OTHER_ADMIN, WHITELIST_ADMIN_ROLE
+            )
+        );
+        vm.prank(OTHER_ADMIN);
+        verifier.addToWhitelist(ADOPTER, ADMIN);
+    }
+
+    function test_RevertIf_nonDefaultAdminGrantsWhitelistAdminRole() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, UNAUTHORIZED, DEFAULT_ADMIN_ROLE
+            )
+        );
+        vm.prank(UNAUTHORIZED);
+        verifier.grantWhitelistAdminRole(OTHER_ADMIN);
+    }
+
+    function test_RevertIf_nonDefaultAdminRevokesWhitelistAdminRole() public {
+        vm.prank(DEFAULT_ADMIN);
+        verifier.grantWhitelistAdminRole(OTHER_ADMIN);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, UNAUTHORIZED, DEFAULT_ADMIN_ROLE
+            )
+        );
+        vm.prank(UNAUTHORIZED);
+        verifier.revokeWhitelistAdminRole(OTHER_ADMIN);
     }
 }

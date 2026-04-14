@@ -100,7 +100,7 @@ Running `DeployCore` or `DeployCoreWithCreateX` will:
 1. Deploy the DA verifier (ECDSA) and log its address.
 2. Deploy the DA verifier (OnChain) and log its address.
 3. Deploy `AdminVerifierOwner` if `DEPLOY_ADMIN_VERIFIER_OWNER=true` and log its address.
-4. Deploy `AdminVerifierWhitelist` if `DEPLOY_ADMIN_VERIFIER_WHITELIST=true` (using `ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS` as constructor owner) and log its address.
+4. Deploy `AdminVerifierWhitelist` if `DEPLOY_ADMIN_VERIFIER_WHITELIST=true` (using `ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS` as constructor default admin and initial whitelist admin) and log its address.
 5. Deploy the `StateOracle` implementation and log its address.
 6. Deploy the proxy, initialize it with the configured admin verifiers and DA verifiers, and log the proxy address.
 
