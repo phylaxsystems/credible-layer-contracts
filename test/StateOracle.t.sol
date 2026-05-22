@@ -225,6 +225,55 @@ contract AddAssertion is StateOracleBase {
     }
 }
 
+contract ResetStorage is StateOracleBase {
+    function testFuzz_resetStorage(bytes32 storageKey) public {
+        (address adopter, address manager) = registerAssertionAdopter();
+        uint256 resetBlock = block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
+
+        vm.expectEmit(true, true, false, true, address(stateOracle));
+        emit StateOracle.StorageReset(adopter, storageKey, resetBlock);
+
+        vm.prank(manager);
+        stateOracle.resetStorage(adopter, storageKey);
+
+        assertEq(stateOracle.getManager(adopter), manager, "Manager should not change");
+        assertEq(stateOracle.getAssertionCount(adopter), 0, "Assertion count should not change");
+    }
+
+    function test_resetStorageAllowsZeroStorageKey() public {
+        (address adopter, address manager) = registerAssertionAdopter();
+        bytes32 storageKey = bytes32(0);
+        uint256 resetBlock = block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
+
+        vm.expectEmit(true, true, false, true, address(stateOracle));
+        emit StateOracle.StorageReset(adopter, storageKey, resetBlock);
+
+        vm.prank(manager);
+        stateOracle.resetStorage(adopter, storageKey);
+    }
+
+    function testFuzz_RevertIf_resetStorageByUnauthorized(bytes32 storageKey, address unauthorizedManager)
+        public
+        noAdmin(unauthorizedManager)
+    {
+        (address adopter, address manager) = registerAssertionAdopter();
+        vm.assume(unauthorizedManager != manager);
+
+        vm.prank(unauthorizedManager);
+        vm.expectRevert(StateOracleAccessControl.UnauthorizedManager.selector);
+        stateOracle.resetStorage(adopter, storageKey);
+    }
+
+    function testFuzz_RevertIf_resetStorageForUnregisteredAdopter(address adopter, bytes32 storageKey, address caller)
+        public
+        noAdmin(caller)
+    {
+        vm.prank(caller);
+        vm.expectRevert(StateOracle.AssertionAdopterNotRegistered.selector);
+        stateOracle.resetStorage(adopter, storageKey);
+    }
+}
+
 contract RemoveAssertion is StateOracleBase {
     function testFuzz_removeAssertion(bytes32 assertionId) public {
         (address adopter, address manager) = registerAssertionAdopter();
@@ -692,6 +741,19 @@ contract Batch is StateOracleBase {
 
         assertTrue(deactivationBlock1 != 0, "Assertion 1 should have been removed");
         assertTrue(deactivationBlock2 != 0, "Assertion 2 should have been removed");
+    }
+
+    function testFuzz_batchResetStorage(bytes32 storageKey) public {
+        (address adopter, address manager) = registerAssertionAdopter();
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = abi.encodeWithSelector(StateOracle.resetStorage.selector, adopter, storageKey);
+        uint256 resetBlock = block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
+
+        vm.expectEmit(true, true, false, true, address(stateOracle));
+        emit StateOracle.StorageReset(adopter, storageKey, resetBlock);
+
+        vm.prank(manager);
+        stateOracle.batch(calls);
     }
 }
 
