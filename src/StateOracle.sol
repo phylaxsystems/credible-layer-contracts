@@ -117,6 +117,12 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @param deactivationBlock The block number when the assertion is going to be inactive
     event AssertionRemoved(address indexed assertionAdopter, bytes32 indexed assertionId, uint256 deactivationBlock);
 
+    /// @notice Emitted when a storage reset is requested for an assertion adopter
+    /// @param adopter The assertion adopter whose side-store state should be reset
+    /// @param storageKey The side-store key identifying the state to reset
+    /// @param resetBlock The block number when the reset becomes eligible
+    event StorageReset(address indexed adopter, bytes32 indexed storageKey, uint256 resetBlock);
+
     /// @notice Emitted when the whitelist is enabled
     event WhitelistEnabled();
 
@@ -246,6 +252,13 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         assertionAdopters[contractAddress].assertions[assertionId].activationBlock = activationBlock;
         assertionAdopters[contractAddress].assertionCount++;
         emit AssertionAdded(contractAddress, assertionId, activationBlock, daVerifier, metadata, proof);
+    }
+
+    /// @notice Requests a storage reset for an assertion adopter
+    /// @param adopter The assertion adopter whose side-store state should be reset
+    /// @param storageKey The side-store key identifying the state to reset
+    function resetStorage(address adopter, bytes32 storageKey) external onlyManager(adopter) {
+        emit StorageReset(adopter, storageKey, block.number + ASSERTION_TIMELOCK_BLOCKS);
     }
 
     /// @notice Removes an assertion from an assertion adopter
