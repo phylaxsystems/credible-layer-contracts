@@ -19,10 +19,28 @@ class WizardSession:
     def __init__(self, no_color=True):
         self._temporary_directory = tempfile.TemporaryDirectory()
         fake_bin = Path(self._temporary_directory.name)
-        for command in ("forge", "cast", "jq"):
+        for command in ("forge", "jq"):
             executable = fake_bin / command
             executable.write_text("#!/bin/sh\nexit 0\n")
             executable.chmod(0o755)
+        cast = fake_bin / "cast"
+        cast.write_text(
+            """#!/bin/sh
+case "$1" in
+    chain-id) echo 31337 ;;
+    to-check-sum-address) echo "$2" ;;
+    balance) echo 0 ;;
+    nonce) echo 0 ;;
+    wallet)
+        case "$2" in
+            list) echo "deployer (Local)" ;;
+            address) echo 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 ;;
+        esac
+        ;;
+esac
+"""
+        )
+        cast.chmod(0o755)
 
         self.pid, self.master_fd = pty.fork()
         if self.pid == 0:
@@ -32,6 +50,12 @@ class WizardSession:
             else:
                 environment.pop("NO_COLOR", None)
                 environment["TERM"] = "xterm-256color"
+            environment["RPC_URL"] = "http://rpc.example"
+            environment["STATE_ORACLE_MAX_ASSERTIONS_PER_AA"] = "5"
+            environment["STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS"] = "10"
+            environment["STATE_ORACLE_ADMIN_ADDRESS"] = (
+                "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+            )
             environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
             os.chdir(ROOT_DIR)
             os.execvpe(str(WIZARD), [str(WIZARD)], environment)
@@ -118,6 +142,52 @@ class DeployWizardTest(unittest.TestCase):
             wizard.expect_any("Add On-chain bytecode to which State Oracle(s)?")
             wizard.send(b" \r")
             wizard.expect_any("Should the State Oracle whitelist be enabled?")
+        finally:
+            wizard.close()
+
+    def test_zero_balance_wallet_stops_before_forge(self):
+        wizard = WizardSession()
+        try:
+            wizard.expect_any("What kind of deployment is this?")
+            wizard.send(b"\r")
+            wizard.expect_any("Deploy a staging State Oracle as well?")
+            wizard.send(b"\r")
+
+            wizard.expect_any("Which admin verifiers should be deployed?")
+            wizard.send(b" \r")
+            wizard.expect_any("Add Owner to which State Oracle(s)?")
+            wizard.send(b" \r")
+
+            wizard.expect_any("Which DA verifiers should be deployed?")
+            wizard.send(b"\x1b[B \r")
+            wizard.expect_any("Add On-chain bytecode to which State Oracle(s)?")
+            wizard.send(b" \r")
+
+            wizard.expect_any("Should the State Oracle whitelist be enabled?")
+            wizard.send(b"\x1b[B\r")
+            wizard.expect_any("Verify deployed contracts on the block explorer?")
+            wizard.send(b"\x1b[B\r")
+
+            wizard.expect_any("RPC URL")
+            wizard.send(b"\r")
+            wizard.expect_any("Maximum assertions per adopter")
+            wizard.send(b"\r")
+            wizard.expect_any("Assertion timelock in blocks")
+            wizard.send(b"\r")
+            wizard.expect_any("State Oracle admin")
+            wizard.send(b"\r")
+
+            wizard.expect_any("Which Foundry wallet should deploy the contracts?")
+            wizard.send(b"\r")
+            wizard.expect_any("Password for deployer")
+            wizard.send(b"password\r")
+
+            result = wizard.expect_any(
+                "has no funds on chain 31337",
+                "Deployment summary",
+            )
+            if result == "Deployment summary":
+                self.fail("zero-balance wallet reached the deployment confirmation")
         finally:
             wizard.close()
 
