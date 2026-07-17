@@ -115,6 +115,33 @@ State Oracle Implementation deployed at <address>
 State Oracle Proxy deployed at <address>
 ```
 
+### Interactive deployment wizard
+
+Run the terminal wizard from the repository root:
+
+```sh
+make deploy
+```
+
+The wizard uses `DeployCore` as its deployment backend and guides you through:
+
+- production or testing mode, plus an optional staging State Oracle;
+- admin verifier selection and assignment to the production and/or staging oracle;
+- ECDSA and/or on-chain DA verification, independently assigned to each State Oracle;
+- initial State Oracle whitelist state and addresses;
+- optional explorer verification using `ETHERSCAN_API_KEY`;
+- all State Oracle limits, timelocks, admins, and verifier-specific addresses; and
+- a Foundry keystore account selected from `cast wallet list`.
+
+The wallet password and explorer API key are read without echoing. The password is checked before
+deployment and stored only in a temporary mode-`600` file that is removed when the wizard exits.
+Before broadcasting, the wizard prints a redacted Forge command and a complete configuration
+summary. After broadcasting, it reads Foundry's receipt file and prints every deployment address,
+block number, transaction hash, and proxy admin address.
+
+Testing mode also exposes the `Super Admin` and `Always Approve` admin verifiers. These options are
+rejected by the Solidity deployment backend unless testing mode is explicitly enabled.
+
 ## Installation
 
 1. Clone the repository:

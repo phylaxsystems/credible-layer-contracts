@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+
+import errno
+import os
+import pty
+import selectors
+import signal
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+WIZARD = ROOT_DIR / "shell" / "deploy_wizard.sh"
+
+
+class WizardSession:
+    def __init__(self, no_color=True):
+        self._temporary_directory = tempfile.TemporaryDirectory()
+        fake_bin = Path(self._temporary_directory.name)
+        for command in ("forge", "cast", "jq"):
+            executable = fake_bin / command
+            executable.write_text("#!/bin/sh\nexit 0\n")
+            executable.chmod(0o755)
+
+        self.pid, self.master_fd = pty.fork()
+        if self.pid == 0:
+            environment = os.environ.copy()
+            if no_color:
+                environment["NO_COLOR"] = "1"
+            else:
+                environment.pop("NO_COLOR", None)
+                environment["TERM"] = "xterm-256color"
+            environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+            os.chdir(ROOT_DIR)
+            os.execvpe(str(WIZARD), [str(WIZARD)], environment)
+
+        self.output = ""
+        self.transcript = ""
+        self.selector = selectors.DefaultSelector()
+        self.selector.register(self.master_fd, selectors.EVENT_READ)
+
+    def expect_any(self, *needles, timeout=5):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for needle in needles:
+                if needle in self.output:
+                    match_end = self.output.index(needle) + len(needle)
+                    self.output = self.output[match_end:]
+                    return needle
+
+            if not self.selector.select(0.1):
+                continue
+            try:
+                chunk = os.read(self.master_fd, 4096)
+            except OSError as error:
+                if error.errno == errno.EIO:
+                    break
+                raise
+            if not chunk:
+                break
+            decoded = chunk.decode(errors="replace")
+            self.output += decoded
+            self.transcript += decoded
+
+        self.fail_with_output(f"Timed out waiting for one of: {needles}")
+
+    def send(self, keys):
+        os.write(self.master_fd, keys)
+
+    def fail_with_output(self, message):
+        raise AssertionError(f"{message}\nWizard output:\n{self.output}")
+
+    def close(self):
+        try:
+            os.kill(self.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        self.selector.close()
+        try:
+            os.close(self.master_fd)
+        except OSError:
+            pass
+        try:
+            os.waitpid(self.pid, 0)
+        except ChildProcessError:
+            pass
+        self._temporary_directory.cleanup()
+
+
+class DeployWizardTest(unittest.TestCase):
+    def test_interactive_output_uses_color(self):
+        wizard = WizardSession(no_color=False)
+        try:
+            wizard.expect_any("Credible Layer deployment wizard")
+            self.assertIn("\x1b[1m\x1b[36m", wizard.transcript)
+        finally:
+            wizard.close()
+
+    def test_assigning_multiple_da_verifiers_to_production_advances_to_whitelist(self):
+        wizard = WizardSession()
+        try:
+            wizard.expect_any("What kind of deployment is this?")
+            wizard.send(b"\r")
+            wizard.expect_any("Deploy a staging State Oracle as well?")
+            wizard.send(b"\r")
+
+            wizard.expect_any("Which admin verifiers should be deployed?")
+            wizard.send(b" \r")
+            wizard.expect_any("Add Owner to which State Oracle(s)?")
+            wizard.send(b" \r")
+
+            wizard.expect_any("Which DA verifiers should be deployed?")
+            wizard.send(b" \x1b[B \r")
+            wizard.expect_any("Add ECDSA signatures to which State Oracle(s)?")
+            wizard.send(b" \r")
+            wizard.expect_any("Add On-chain bytecode to which State Oracle(s)?")
+            wizard.send(b" \r")
+            wizard.expect_any("Should the State Oracle whitelist be enabled?")
+        finally:
+            wizard.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
