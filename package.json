@@ -15,7 +15,9 @@
   "scripts": {
     "prepare": "./shell/create_artifacts.sh",
     "test": "forge test",
+    "test:deploy-wizard": "python3 test/shell/test_deploy_wizard.py",
     "build": "forge build",
+    "deploy:wizard": "./shell/deploy_wizard.sh",
     "format": "forge fmt",
     "clean": "forge clean"
   },
