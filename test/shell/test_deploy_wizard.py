@@ -16,20 +16,25 @@ WIZARD = ROOT_DIR / "shell" / "deploy_wizard.sh"
 
 
 class WizardSession:
-    def __init__(self, no_color=True):
+    def __init__(self, no_color=True, balance_wei="0"):
         self._temporary_directory = tempfile.TemporaryDirectory()
         fake_bin = Path(self._temporary_directory.name)
-        for command in ("forge", "jq"):
-            executable = fake_bin / command
-            executable.write_text("#!/bin/sh\nexit 0\n")
-            executable.chmod(0o755)
+        self.forge_arguments = fake_bin / "forge-arguments"
+        forge = fake_bin / "forge"
+        forge.write_text(
+            '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$FAKE_FORGE_ARGUMENTS"\n'
+        )
+        forge.chmod(0o755)
+        jq = fake_bin / "jq"
+        jq.write_text("#!/bin/sh\nexit 0\n")
+        jq.chmod(0o755)
         cast = fake_bin / "cast"
         cast.write_text(
-            """#!/bin/sh
+            f"""#!/bin/sh
 case "$1" in
     chain-id) echo 31337 ;;
     to-check-sum-address) echo "$2" ;;
-    balance) echo 0 ;;
+    balance) echo {balance_wei} ;;
     nonce) echo 0 ;;
     wallet)
         case "$2" in
@@ -56,6 +61,7 @@ esac
             environment["STATE_ORACLE_ADMIN_ADDRESS"] = (
                 "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
             )
+            environment["FAKE_FORGE_ARGUMENTS"] = str(self.forge_arguments)
             environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
             os.chdir(ROOT_DIR)
             os.execvpe(str(WIZARD), [str(WIZARD)], environment)
@@ -188,6 +194,59 @@ class DeployWizardTest(unittest.TestCase):
             )
             if result == "Deployment summary":
                 self.fail("zero-balance wallet reached the deployment confirmation")
+        finally:
+            wizard.close()
+
+    def test_funded_account_sets_forge_rpc_and_sender(self):
+        wizard = WizardSession(balance_wei="1000000000000000000")
+        try:
+            wizard.expect_any("What kind of deployment is this?")
+            wizard.send(b"\r")
+            wizard.expect_any("Deploy a staging State Oracle as well?")
+            wizard.send(b"\r")
+
+            wizard.expect_any("Which admin verifiers should be deployed?")
+            wizard.send(b" \r")
+            wizard.expect_any("Add Owner to which State Oracle(s)?")
+            wizard.send(b" \r")
+
+            wizard.expect_any("Which DA verifiers should be deployed?")
+            wizard.send(b"\x1b[B \r")
+            wizard.expect_any("Add On-chain bytecode to which State Oracle(s)?")
+            wizard.send(b" \r")
+
+            wizard.expect_any("Should the State Oracle whitelist be enabled?")
+            wizard.send(b"\x1b[B\r")
+            wizard.expect_any("Verify deployed contracts on the block explorer?")
+            wizard.send(b"\x1b[B\r")
+
+            wizard.expect_any("RPC URL")
+            wizard.send(b"\r")
+            wizard.expect_any("Maximum assertions per adopter")
+            wizard.send(b"\r")
+            wizard.expect_any("Assertion timelock in blocks")
+            wizard.send(b"\r")
+            wizard.expect_any("State Oracle admin")
+            wizard.send(b"\r")
+
+            wizard.expect_any("Which Foundry wallet should deploy the contracts?")
+            wizard.send(b"\r")
+            wizard.expect_any("Password for deployer")
+            wizard.send(b"password\r")
+
+            wizard.expect_any("Ready to continue?")
+            self.assertIn("--rpc-url \\<configured\\>", wizard.transcript)
+            wizard.send(b"\r")
+            wizard.expect_any("Deployment complete", "broadcast receipt was not found")
+
+            forge_arguments = wizard.forge_arguments.read_text().splitlines()
+            rpc_index = forge_arguments.index("--rpc-url")
+            self.assertEqual(forge_arguments[rpc_index + 1], "http://rpc.example")
+            sender_index = forge_arguments.index("--sender")
+            self.assertEqual(
+                forge_arguments[sender_index + 1],
+                "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            )
         finally:
             wizard.close()
 

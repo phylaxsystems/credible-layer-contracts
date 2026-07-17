@@ -347,7 +347,7 @@ join_by_comma() {
 }
 
 print_redacted_command() {
-    local item
+    local item redact_next=false
     tty_println ""
     tty_section "Wallet password validation command"
     printf '  cast wallet address --account %q --password-file <temporary-password-file>\n' "$wallet_account" >/dev/tty
@@ -363,7 +363,12 @@ print_redacted_command() {
     done
     tty_print "    forge"
     for item in "${forge_args[@]}"; do
-        if [[ "$item" == "$PASSWORD_FILE" ]]; then
+        if [[ "$redact_next" == "true" ]]; then
+            item='<configured>'
+            redact_next=false
+        elif [[ "$item" == "--rpc-url" ]]; then
+            redact_next=true
+        elif [[ "$item" == "$PASSWORD_FILE" ]]; then
             item='<temporary-password-file>'
         fi
         printf ' %q' "$item" >/dev/tty
@@ -743,7 +748,9 @@ fi
 forge_args=(
     script
     "script/DeployWizard.s.sol:DeployWizard"
+    --rpc-url "$rpc_url"
     --account "$wallet_account"
+    --sender "$wallet_address"
     --password-file "$PASSWORD_FILE"
     --broadcast
 )
