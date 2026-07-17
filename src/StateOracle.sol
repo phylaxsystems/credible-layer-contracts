@@ -201,46 +201,14 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         IDAVerifier[] calldata _daVerifiers,
         uint16 _maxAssertionsPerAA
     ) external initializer {
-        _initialize(admin, _adminVerifiers, _daVerifiers, _maxAssertionsPerAA, true, new address[](0));
-    }
-
-    /// @notice Initializes the contract with an explicit whitelist configuration
-    /// @param admin The address to set as the admin
-    /// @param _adminVerifiers The admin verifiers to add
-    /// @param _daVerifiers The DA verifiers to add
-    /// @param _maxAssertionsPerAA Maximum number of assertions per assertion adopter
-    /// @param _whitelistEnabled Whether whitelist checks are enabled initially
-    /// @param _initialWhitelist Addresses to add to the initial whitelist
-    function initializeWithWhitelist(
-        address admin,
-        IAdminVerifier[] calldata _adminVerifiers,
-        IDAVerifier[] calldata _daVerifiers,
-        uint16 _maxAssertionsPerAA,
-        bool _whitelistEnabled,
-        address[] calldata _initialWhitelist
-    ) external initializer {
-        _initialize(admin, _adminVerifiers, _daVerifiers, _maxAssertionsPerAA, _whitelistEnabled, _initialWhitelist);
-    }
-
-    function _initialize(
-        address admin,
-        IAdminVerifier[] memory _adminVerifiers,
-        IDAVerifier[] memory _daVerifiers,
-        uint16 _maxAssertionsPerAA,
-        bool _whitelistEnabled,
-        address[] memory _initialWhitelist
-    ) internal {
         _initializeRoles(admin);
 
-        whitelistEnabled = _whitelistEnabled;
+        whitelistEnabled = true;
         for (uint256 i = 0; i < _adminVerifiers.length; i++) {
             _addAdminVerifier(_adminVerifiers[i]);
         }
         for (uint256 i = 0; i < _daVerifiers.length; i++) {
             _addDAVerifier(_daVerifiers[i]);
-        }
-        for (uint256 i = 0; i < _initialWhitelist.length; i++) {
-            _addToWhitelist(_initialWhitelist[i]);
         }
         _setMaxAssertionsPerAA(_maxAssertionsPerAA);
     }
@@ -324,10 +292,6 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @notice Adds an account to the whitelist
     /// @param account The address to add
     function addToWhitelist(address account) external onlyOperator {
-        _addToWhitelist(account);
-    }
-
-    function _addToWhitelist(address account) internal {
         require(!whitelist[account], AlreadyWhitelisted(account));
         whitelist[account] = true;
         emit AddedToWhitelist(account);

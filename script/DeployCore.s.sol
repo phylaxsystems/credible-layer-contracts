@@ -166,7 +166,6 @@ contract DeployCore is Script {
     }
 
     function _deployWhitelistAdminVerifier() internal virtual returns (address verifier) {
-        require(whitelistAdmin != address(0), "Invalid whitelist admin");
         verifier = address(new AdminVerifierWhitelist(whitelistAdmin));
         console2.log("Admin Verifier (Whitelist) deployed at", verifier);
         return verifier;
