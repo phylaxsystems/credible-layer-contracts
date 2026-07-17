@@ -683,6 +683,16 @@ while true; do
     tty_warn "That password did not unlock $wallet_account. Try again."
 done
 
+if ! wallet_balance_wei=$(cast balance "$wallet_address" --rpc-url "$rpc_url" 2>/dev/null); then
+    die "Unable to read the balance for $wallet_address on chain $chain_id"
+fi
+if [[ ! "$wallet_balance_wei" =~ ^[0-9]+$ ]]; then
+    die "Received an invalid balance for $wallet_address on chain $chain_id"
+fi
+if [[ "$wallet_balance_wei" =~ ^0+$ ]]; then
+    die "Selected wallet $wallet_address has no funds on chain $chain_id. Fund it before deploying."
+fi
+
 wallet_balance=$(cast balance --ether "$wallet_address" --rpc-url "$rpc_url" 2>/dev/null || printf 'unknown')
 wallet_nonce=$(cast nonce "$wallet_address" --rpc-url "$rpc_url" 2>/dev/null || printf 'unknown')
 tty_success "Wallet unlocked successfully: $wallet_address"
