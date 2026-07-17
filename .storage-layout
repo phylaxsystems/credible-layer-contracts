@@ -25,7 +25,7 @@
       "type": "t_mapping(t_bytes32,t_struct(RoleData)22_storage)"
     },
     {
-      "astId": 1058,
+      "astId": 1067,
       "contract": "src/StateOracle.sol:StateOracle",
       "label": "assertionAdopters",
       "offset": 0,
@@ -33,23 +33,23 @@
       "type": "t_mapping(t_address,t_struct(AssertionAdopter)979_storage)"
     },
     {
-      "astId": 1064,
+      "astId": 1073,
       "contract": "src/StateOracle.sol:StateOracle",
       "label": "adminVerifiers",
       "offset": 0,
       "slot": "4",
-      "type": "t_mapping(t_contract(IAdminVerifier)2524,t_bool)"
+      "type": "t_mapping(t_contract(IAdminVerifier)2650,t_bool)"
     },
     {
-      "astId": 1070,
+      "astId": 1079,
       "contract": "src/StateOracle.sol:StateOracle",
       "label": "daVerifiers",
       "offset": 0,
       "slot": "5",
-      "type": "t_mapping(t_contract(IDAVerifier)2553,t_bool)"
+      "type": "t_mapping(t_contract(IDAVerifier)2679,t_bool)"
     },
     {
-      "astId": 1075,
+      "astId": 1084,
       "contract": "src/StateOracle.sol:StateOracle",
       "label": "whitelist",
       "offset": 0,
@@ -57,7 +57,7 @@
       "type": "t_mapping(t_address,t_bool)"
     },
     {
-      "astId": 1078,
+      "astId": 1087,
       "contract": "src/StateOracle.sol:StateOracle",
       "label": "whitelistEnabled",
       "offset": 0,
@@ -65,7 +65,7 @@
       "type": "t_bool"
     },
     {
-      "astId": 1081,
+      "astId": 1090,
       "contract": "src/StateOracle.sol:StateOracle",
       "label": "maxAssertionsPerAA",
       "offset": 1,
@@ -89,12 +89,12 @@
       "label": "bytes32",
       "numberOfBytes": "32"
     },
-    "t_contract(IAdminVerifier)2524": {
+    "t_contract(IAdminVerifier)2650": {
       "encoding": "inplace",
       "label": "contract IAdminVerifier",
       "numberOfBytes": "20"
     },
-    "t_contract(IDAVerifier)2553": {
+    "t_contract(IDAVerifier)2679": {
       "encoding": "inplace",
       "label": "contract IDAVerifier",
       "numberOfBytes": "20"
@@ -127,16 +127,16 @@
       "numberOfBytes": "32",
       "value": "t_struct(RoleData)22_storage"
     },
-    "t_mapping(t_contract(IAdminVerifier)2524,t_bool)": {
+    "t_mapping(t_contract(IAdminVerifier)2650,t_bool)": {
       "encoding": "mapping",
-      "key": "t_contract(IAdminVerifier)2524",
+      "key": "t_contract(IAdminVerifier)2650",
       "label": "mapping(contract IAdminVerifier => bool)",
       "numberOfBytes": "32",
       "value": "t_bool"
     },
-    "t_mapping(t_contract(IDAVerifier)2553,t_bool)": {
+    "t_mapping(t_contract(IDAVerifier)2679,t_bool)": {
       "encoding": "mapping",
-      "key": "t_contract(IDAVerifier)2553",
+      "key": "t_contract(IDAVerifier)2679",
       "label": "mapping(contract IDAVerifier => bool)",
       "numberOfBytes": "32",
       "value": "t_bool"
