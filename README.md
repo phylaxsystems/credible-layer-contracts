@@ -159,6 +159,8 @@ block number, transaction hash, and proxy admin address.
 Testing mode also exposes the `Super Admin` and `Always Approve` admin verifiers. These options are
 rejected by the Solidity deployment backend unless testing mode is explicitly enabled. Both testing
 verifiers use named CREATE3 salts, as do every production and staging contract deployed by the wizard.
+Every broadcast entrypoint in `DeployTestingAdminVerifiers.s.sol` likewise requires
+`DEPLOYMENT_IS_TESTING=true`.
 
 ## Installation
 

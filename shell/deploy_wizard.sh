@@ -57,7 +57,7 @@ die() {
 }
 
 init_colors() {
-    if [[ -v NO_COLOR || ${TERM:-} == "dumb" ]]; then
+    if [[ -n ${NO_COLOR+x} || ${TERM:-} == "dumb" ]]; then
         return
     fi
 
@@ -354,6 +354,9 @@ print_redacted_command() {
     tty_println ""
     tty_section "Forge deployment command"
     tty_println "  env \\"
+    for item in "${env_unset_args[@]}"; do
+        printf '    %q \\\n' "$item" >/dev/tty
+    done
     for item in "${env_args[@]}"; do
         case "$item" in
             ETH_RPC_URL=*) item='ETH_RPC_URL=<configured>' ;;
@@ -381,7 +384,13 @@ lookup_transaction() {
     local address=$2
     jq -r --arg address "$address" '
         [.transactions[]
-          | select(((.contractAddress // "") | ascii_downcase) == ($address | ascii_downcase))]
+          | select(
+              ((.contractAddress // "") | ascii_downcase) == ($address | ascii_downcase)
+              or any(
+                  .additionalContracts[]?;
+                  ((.address // "") | ascii_downcase) == ($address | ascii_downcase)
+              )
+            )]
         | last
         | .hash // empty
     ' "$broadcast_file"
@@ -723,6 +732,7 @@ env_args=(
     "ADMIN_VERIFIER_ALWAYS_APPROVE_PRODUCTION=$(bool_for_selection "${admin_production[3]}")"
     "ADMIN_VERIFIER_ALWAYS_APPROVE_STAGING=$(bool_for_selection "${admin_staging[3]}")"
 )
+env_unset_args=(-u STATE_ORACLE_INITIAL_WHITELIST)
 
 if [[ "$deploy_staging" == "true" ]]; then
     env_args[${#env_args[@]}]="STAGING_STATE_ORACLE_MAX_ASSERTIONS_PER_AA=$staging_max_assertions"
@@ -831,7 +841,7 @@ esac
 
 FORGE_OUTPUT_FILE=$(mktemp "${TMPDIR:-/tmp}/credible-layer-forge.XXXXXX")
 set +e
-env "${env_args[@]}" forge "${forge_args[@]}" 2>&1 | tee "$FORGE_OUTPUT_FILE"
+env "${env_unset_args[@]}" "${env_args[@]}" forge "${forge_args[@]}" 2>&1 | tee "$FORGE_OUTPUT_FILE"
 forge_status=${PIPESTATUS[0]}
 set -e
 [[ $forge_status -eq 0 ]] || die "Forge deployment failed with status $forge_status"

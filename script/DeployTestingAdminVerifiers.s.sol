@@ -15,6 +15,7 @@ contract DeployTestingAdminVerifiers is Script, CreateXDeployer {
     bool deploySuperAdminVerifierEnabled;
     bool deployAlwaysApproveVerifierEnabled;
     bool addToStateOracle;
+    bool testingDeployment;
 
     function setUp() public virtual {
         stateOracle = vm.envOr("TEST_STATE_ORACLE_ADDRESS", address(0));
@@ -22,6 +23,7 @@ contract DeployTestingAdminVerifiers is Script, CreateXDeployer {
         deploySuperAdminVerifierEnabled = vm.envOr("DEPLOY_TEST_ADMIN_VERIFIER_SUPER_ADMIN", false);
         deployAlwaysApproveVerifierEnabled = vm.envOr("DEPLOY_TEST_ADMIN_VERIFIER_ALWAYS_APPROVE", false);
         addToStateOracle = vm.envOr("ADD_TEST_ADMIN_VERIFIERS_TO_STATE_ORACLE", false);
+        testingDeployment = vm.envOr("DEPLOYMENT_IS_TESTING", false);
     }
 
     modifier broadcast() {
@@ -30,20 +32,26 @@ contract DeployTestingAdminVerifiers is Script, CreateXDeployer {
         vm.stopBroadcast();
     }
 
-    function run() public broadcast {
+    modifier testingOnly() {
+        require(testingDeployment, "Testing admin verifiers are test-only");
+        _;
+    }
+
+    function run() public testingOnly broadcast {
         _run();
     }
 
-    function deploySuperAdminVerifier(address _superAdmin) public broadcast returns (address) {
+    function deploySuperAdminVerifier(address _superAdmin) public testingOnly broadcast returns (address) {
         return _deploySuperAdminVerifier(_superAdmin);
     }
 
-    function deployAlwaysApproveAdminVerifier() public broadcast returns (address) {
+    function deployAlwaysApproveAdminVerifier() public testingOnly broadcast returns (address) {
         return _deployAlwaysApproveAdminVerifier();
     }
 
     function deployAndAddSuperAdminVerifier(address _stateOracle, address _superAdmin)
         public
+        testingOnly
         broadcast
         returns (address verifier)
     {
@@ -51,12 +59,17 @@ contract DeployTestingAdminVerifiers is Script, CreateXDeployer {
         _addAdminVerifier(_stateOracle, verifier);
     }
 
-    function deployAndAddAlwaysApproveAdminVerifier(address _stateOracle) public broadcast returns (address verifier) {
+    function deployAndAddAlwaysApproveAdminVerifier(address _stateOracle)
+        public
+        testingOnly
+        broadcast
+        returns (address verifier)
+    {
         verifier = _deployAlwaysApproveAdminVerifier();
         _addAdminVerifier(_stateOracle, verifier);
     }
 
-    function addAdminVerifier(address _stateOracle, address verifier) public broadcast {
+    function addAdminVerifier(address _stateOracle, address verifier) public testingOnly broadcast {
         _addAdminVerifier(_stateOracle, verifier);
     }
 

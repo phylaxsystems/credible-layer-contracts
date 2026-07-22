@@ -128,6 +128,36 @@ contract DeployAdminVerifiersTest is Test {
         assertTrue(stateOracle.isAdminVerifierRegistered(IAdminVerifier(verifiers[1])));
     }
 
+    function test_RevertIf_testingScriptEntrypointsRunOutsideTestingDeployment() public {
+        DeployTestingAdminVerifiers deployer = new DeployTestingAdminVerifiers();
+        vm.setEnv("DEPLOYMENT_IS_TESTING", "false");
+        deployer.setUp();
+
+        vm.expectRevert(bytes("Testing admin verifiers are test-only"));
+        deployer.run();
+        vm.expectRevert(bytes("Testing admin verifiers are test-only"));
+        deployer.deploySuperAdminVerifier(SUPER_ADMIN);
+        vm.expectRevert(bytes("Testing admin verifiers are test-only"));
+        deployer.deployAlwaysApproveAdminVerifier();
+        vm.expectRevert(bytes("Testing admin verifiers are test-only"));
+        deployer.deployAndAddSuperAdminVerifier(address(1), SUPER_ADMIN);
+        vm.expectRevert(bytes("Testing admin verifiers are test-only"));
+        deployer.deployAndAddAlwaysApproveAdminVerifier(address(1));
+        vm.expectRevert(bytes("Testing admin verifiers are test-only"));
+        deployer.addAdminVerifier(address(1), address(1));
+    }
+
+    function test_testingScriptAllowsEntrypointsInTestingDeployment() public {
+        DeployTestingAdminVerifiers deployer = new DeployTestingAdminVerifiers();
+        vm.setEnv("DEPLOYMENT_IS_TESTING", "true");
+        deployer.setUp();
+        vm.setEnv("DEPLOYMENT_IS_TESTING", "false");
+
+        address verifier = deployer.deployAlwaysApproveAdminVerifier();
+
+        assertTrue(IAdminVerifier(verifier).verifyAdmin(address(1), OTHER, ""));
+    }
+
     function test_RevertIf_testingScriptDeploysSuperAdminVerifierWithoutAdmin() public {
         DeployTestingAdminVerifiersHarness deployer = new DeployTestingAdminVerifiersHarness();
         deployer.configureTestingAdminVerifiers(address(1), address(0), true, false, false);
