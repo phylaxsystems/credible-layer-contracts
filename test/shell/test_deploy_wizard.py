@@ -130,7 +130,7 @@ esac
                 )
             environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
             os.chdir(repository)
-            os.execvpe(str(wizard), [str(wizard)], environment)
+            os.execvpe("/bin/bash", ["/bin/bash", str(wizard)], environment)
 
         self.output = ""
         self.transcript = ""

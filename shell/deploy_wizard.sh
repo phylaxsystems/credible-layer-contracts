@@ -116,7 +116,7 @@ read_key() {
     IFS= read -rsn1 key </dev/tty || exit 1
     if [[ "$key" == $'\033' ]]; then
         suffix=""
-        IFS= read -rsn2 -t 0.2 suffix </dev/tty || true
+        IFS= read -rsn2 -t 1 suffix </dev/tty || true
         key="${key}${suffix}"
     fi
     KEY_RESULT="$key"
