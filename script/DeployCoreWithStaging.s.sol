@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: CC0-1.0
 pragma solidity ^0.8.28;
 
-import {DeployCore} from "./DeployCore.s.sol";
+import {DeployCoreWithCreateX} from "./DeployCoreWithCreateX.s.sol";
 
-contract DeployCoreWithStaging is DeployCore {
+contract DeployCoreWithStaging is DeployCoreWithCreateX {
     uint256 stagingAssertionTimelockBlocks;
     uint16 stagingMaxAssertionsPerAA;
 
@@ -44,8 +44,16 @@ contract DeployCoreWithStaging is DeployCore {
             _deployStateOracleProxy(stateOracle, deployedAdminVerifiers, daVerifiers, maxAssertionsPerAA);
 
         // Staging oracle
-        address stagingOracle = _deployStateOracle(stagingAssertionTimelockBlocks, "Staging State Oracle");
-        deployedStagingOracle =
-            _deployStateOracleProxy(stagingOracle, deployedAdminVerifiers, daVerifiers, stagingMaxAssertionsPerAA);
+        address stagingOracle = _deployStateOracleWithSalt(
+            stagingAssertionTimelockBlocks, "Staging State Oracle", SALT_STAGING_STATE_ORACLE_NAME
+        );
+        deployedStagingOracle = _deployStateOracleProxyWithSalt(
+            stagingOracle,
+            deployedAdminVerifiers,
+            daVerifiers,
+            stagingMaxAssertionsPerAA,
+            SALT_STAGING_STATE_ORACLE_PROXY_NAME,
+            "Staging State Oracle"
+        );
     }
 }

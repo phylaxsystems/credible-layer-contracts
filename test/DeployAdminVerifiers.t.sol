@@ -9,9 +9,11 @@ import {IDAVerifier} from "../src/interfaces/IDAVerifier.sol";
 import {StateOracle} from "../src/StateOracle.sol";
 import {AdminVerifierSuperAdmin} from "../src/verification/admin/AdminVerifierSuperAdmin.sol";
 import {AdminVerifierWhitelist} from "../src/verification/admin/AdminVerifierWhitelist.sol";
+import {CREATE_X_ADDRESS} from "../script/ICreateX.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {DAVerifierMock} from "./utils/DAVerifierMock.sol";
 import {OwnableAdopter} from "./utils/Adopter.sol";
+import {CreateXTestDouble} from "./utils/CreateXTestDouble.sol";
 
 contract DeployCoreHarness is DeployCore {
     function configureAdminVerifiers(
@@ -70,6 +72,11 @@ contract DeployAdminVerifiersTest is Test {
     address constant OTHER = address(uint160(uint256(keccak256(abi.encode("pcl.test.DeployAdminVerifiers.OTHER")))));
     uint16 constant MAX_ASSERTIONS_PER_AA = 5;
 
+    function setUp() public {
+        CreateXTestDouble createXImplementation = new CreateXTestDouble();
+        vm.etch(CREATE_X_ADDRESS, address(createXImplementation).code);
+    }
+
     function test_coreDeployAdminVerifiersAddsOnlyProductionVerifiersToStateOracle() public {
         DeployCoreHarness deployer = new DeployCoreHarness();
         deployer.configureAdminVerifiers(ADMIN, true, true, WHITELIST_ADMIN);
@@ -113,6 +120,7 @@ contract DeployAdminVerifiersTest is Test {
 
         address[] memory verifiers = deployer.runForTest();
         assertEq(verifiers.length, 2);
+        assertEq(CreateXTestDouble(CREATE_X_ADDRESS).deploymentCount(), 2);
 
         assertTrue(AdminVerifierSuperAdmin(verifiers[0]).verifyAdmin(address(1), SUPER_ADMIN, ""));
         assertTrue(IAdminVerifier(verifiers[1]).verifyAdmin(address(1), OTHER, ""));

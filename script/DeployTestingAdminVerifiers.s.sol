@@ -7,8 +7,9 @@ import {AdminVerifierAlwaysApprove} from "../src/verification/admin/AdminVerifie
 import {AdminVerifierSuperAdmin} from "../src/verification/admin/AdminVerifierSuperAdmin.sol";
 import {console2} from "forge-std/console2.sol";
 import {Script} from "forge-std/Script.sol";
+import {CreateXDeployer} from "./CreateXDeployer.s.sol";
 
-contract DeployTestingAdminVerifiers is Script {
+contract DeployTestingAdminVerifiers is Script, CreateXDeployer {
     address stateOracle;
     address superAdmin;
     bool deploySuperAdminVerifierEnabled;
@@ -84,12 +85,16 @@ contract DeployTestingAdminVerifiers is Script {
 
     function _deploySuperAdminVerifier(address _superAdmin) internal virtual returns (address verifier) {
         require(_superAdmin != address(0), "Invalid super admin");
-        verifier = address(new AdminVerifierSuperAdmin(_superAdmin));
+        verifier = _deployCreate3(
+            SALT_ADMIN_VERIFIER_SUPER_ADMIN_NAME,
+            abi.encodePacked(type(AdminVerifierSuperAdmin).creationCode, abi.encode(_superAdmin))
+        );
         console2.log("Testing Admin Verifier (Super Admin) deployed at", verifier);
     }
 
     function _deployAlwaysApproveAdminVerifier() internal virtual returns (address verifier) {
-        verifier = address(new AdminVerifierAlwaysApprove());
+        verifier =
+            _deployCreate3(SALT_ADMIN_VERIFIER_ALWAYS_APPROVE_NAME, type(AdminVerifierAlwaysApprove).creationCode);
         console2.log("Testing Admin Verifier (Always Approve) deployed at", verifier);
     }
 

@@ -1,19 +1,14 @@
 // SPDX-License-Identifier: CC0-1.0
 pragma solidity ^0.8.28;
 
-import {DeployCore} from "./DeployCore.s.sol";
-import {StateOracle} from "../src/StateOracle.sol";
-import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
-import {IDAVerifier} from "../src/interfaces/IDAVerifier.sol";
-import {AdminVerifierAlwaysApprove} from "../src/verification/admin/AdminVerifierAlwaysApprove.sol";
+import {DeployCoreWithCreateX} from "./DeployCoreWithCreateX.s.sol";
 import {AdminVerifierSuperAdmin} from "../src/verification/admin/AdminVerifierSuperAdmin.sol";
-import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @notice Deployment backend for shell/deploy_wizard.sh.
-/// @dev DeployCore remains the source of the production deployment primitives. This
-/// script only adds per-oracle verifier selection and initial whitelist configuration.
-contract DeployWizard is DeployCore {
+/// @dev The wizard adds per-oracle verifier selection and initial whitelist
+/// configuration to the deterministic CreateX deployment primitives.
+contract DeployWizard is DeployCoreWithCreateX {
     struct VerifierDeployments {
         address daECDSA;
         address daOnChain;
@@ -23,9 +18,7 @@ contract DeployWizard is DeployCore {
         address adminAlwaysApprove;
     }
 
-    bool internal deploymentIsTesting;
     bool internal deployStaging;
-    bool internal whitelistEnabled;
 
     bool internal daECDSAProduction;
     bool internal daECDSAStaging;
@@ -47,9 +40,9 @@ contract DeployWizard is DeployCore {
     address[] internal initialWhitelist;
 
     function setUp() public override {
-        deploymentIsTesting = vm.envOr("DEPLOYMENT_IS_TESTING", false);
+        testingDeployment = vm.envOr("DEPLOYMENT_IS_TESTING", false);
         deployStaging = vm.envOr("DEPLOY_STAGING_STATE_ORACLE", false);
-        whitelistEnabled = vm.envOr("STATE_ORACLE_WHITELIST_ENABLED", true);
+        stateOracleWhitelistEnabled = vm.envOr("STATE_ORACLE_WHITELIST_ENABLED", true);
 
         admin = vm.envAddress("STATE_ORACLE_ADMIN_ADDRESS");
         require(admin != address(0), "Invalid State Oracle admin");
@@ -90,6 +83,7 @@ contract DeployWizard is DeployCore {
         VerifierDeployments memory deployed = _deploySelectedVerifiers();
 
         _deployConfiguredOracle(
+            true,
             "Production",
             _selectedAdminVerifiers(true, deployed),
             _selectedDAVerifiers(true, deployed),
@@ -99,6 +93,7 @@ contract DeployWizard is DeployCore {
 
         if (deployStaging) {
             _deployConfiguredOracle(
+                false,
                 "Staging",
                 _selectedAdminVerifiers(false, deployed),
                 _selectedDAVerifiers(false, deployed),
@@ -146,12 +141,12 @@ contract DeployWizard is DeployCore {
         }
 
         if (adminSuperAdminProduction || adminSuperAdminStaging) {
-            require(deploymentIsTesting, "Super Admin verifier is test-only");
+            require(testingDeployment, "Super Admin verifier is test-only");
             testSuperAdmin = vm.envAddress("TEST_ADMIN_VERIFIER_SUPER_ADMIN_ADDRESS");
             require(testSuperAdmin != address(0), "Invalid test super admin");
         }
         require(
-            deploymentIsTesting || !(adminAlwaysApproveProduction || adminAlwaysApproveStaging),
+            testingDeployment || !(adminAlwaysApproveProduction || adminAlwaysApproveStaging),
             "Always Approve verifier is test-only"
         );
     }
@@ -174,13 +169,15 @@ contract DeployWizard is DeployCore {
             _logDeployment("Admin Verifier (Whitelist)", deployed.adminWhitelist);
         }
         if (adminSuperAdminProduction || adminSuperAdminStaging) {
-            deployed.adminSuperAdmin = address(new AdminVerifierSuperAdmin(testSuperAdmin));
+            deployed.adminSuperAdmin = _deployCreate3(
+                SALT_ADMIN_VERIFIER_SUPER_ADMIN_NAME,
+                abi.encodePacked(type(AdminVerifierSuperAdmin).creationCode, abi.encode(testSuperAdmin))
+            );
             console2.log("Testing Admin Verifier (Super Admin) deployed at", deployed.adminSuperAdmin);
             _logDeployment("Testing Admin Verifier (Super Admin)", deployed.adminSuperAdmin);
         }
         if (adminAlwaysApproveProduction || adminAlwaysApproveStaging) {
-            deployed.adminAlwaysApprove = address(new AdminVerifierAlwaysApprove());
-            console2.log("Testing Admin Verifier (Always Approve) deployed at", deployed.adminAlwaysApprove);
+            deployed.adminAlwaysApprove = _deployAlwaysApproveAdminVerifier();
             _logDeployment("Testing Admin Verifier (Always Approve)", deployed.adminAlwaysApprove);
         }
     }
@@ -228,30 +225,29 @@ contract DeployWizard is DeployCore {
     }
 
     function _deployConfiguredOracle(
+        bool production,
         string memory environment,
         address[] memory adminVerifierDeployments,
         address[] memory daVerifierDeployments,
         uint256 timelockBlocks,
         uint16 maxAssertions
     ) internal returns (address proxyAddress) {
-        address implementation = _deployStateOracle(timelockBlocks, string.concat(environment, " State Oracle"));
+        string memory contractName = string.concat(environment, " State Oracle");
+        string memory implementationSalt = production ? SALT_STATE_ORACLE_NAME : SALT_STAGING_STATE_ORACLE_NAME;
+        string memory proxySalt = production ? SALT_STATE_ORACLE_PROXY_NAME : SALT_STAGING_STATE_ORACLE_PROXY_NAME;
+        address implementation = _deployStateOracleWithSalt(timelockBlocks, contractName, implementationSalt);
         _logDeployment(string.concat(environment, " State Oracle Implementation"), implementation);
 
-        IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](adminVerifierDeployments.length);
-        for (uint256 i = 0; i < adminVerifierDeployments.length; i++) {
-            adminVerifiers[i] = IAdminVerifier(adminVerifierDeployments[i]);
-        }
-        IDAVerifier[] memory daVerifiers = new IDAVerifier[](daVerifierDeployments.length);
-        for (uint256 i = 0; i < daVerifierDeployments.length; i++) {
-            daVerifiers[i] = IDAVerifier(daVerifierDeployments[i]);
-        }
-
-        bytes memory initCallData = abi.encodeCall(
-            StateOracle.initializeWithWhitelist,
-            (admin, adminVerifiers, daVerifiers, maxAssertions, whitelistEnabled, initialWhitelist)
+        proxyAddress = _deployStateOracleProxyWithConfig(
+            implementation,
+            adminVerifierDeployments,
+            daVerifierDeployments,
+            maxAssertions,
+            stateOracleWhitelistEnabled,
+            initialWhitelist,
+            proxySalt,
+            contractName
         );
-        proxyAddress = address(new TransparentUpgradeableProxy(implementation, admin, initCallData));
-        console2.log(string.concat(environment, " State Oracle Proxy deployed at"), proxyAddress);
         _logDeployment(string.concat(environment, " State Oracle Proxy"), proxyAddress);
     }
 
