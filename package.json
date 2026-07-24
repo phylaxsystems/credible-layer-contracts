@@ -35,6 +35,7 @@
   },
   "homepage": "https://github.com/phylaxsystems/credible-layer-contracts#readme",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   }
 }
