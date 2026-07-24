@@ -21,15 +21,6 @@ class ReleaseWorkflowTest(unittest.TestCase):
             release_job,
         )
 
-    def test_existing_tag_can_be_retried_without_rewriting_it(self):
-        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
-
-        self.assertIn("workflow_dispatch:", workflow)
-        self.assertIn("release_tag:", workflow)
-        self.assertIn("ref: ${{ inputs.release_tag || github.ref }}", workflow)
-        self.assertIn("release_tag: ${{ inputs.release_tag }}", workflow)
-        self.assertIn("if: github.event_name == 'push'", workflow)
-
     def test_package_requests_provenance(self):
         package = json.loads((ROOT / "package.json").read_text())
 

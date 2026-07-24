@@ -4,12 +4,6 @@ on:
   push:
     tags:
       - "*.*.*"
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: Existing release tag to retry on npm
-        required: true
-        type: string
 
 env:
   ARTIFACTS_PATH: "artifacts/"
@@ -19,8 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.release_tag || github.ref }}
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
@@ -44,10 +36,8 @@ jobs:
           artifact_name: credible-layer-contracts-artifacts
           artifacts_path: artifacts/
           ignore_scripts: true
-          release_tag: ${{ inputs.release_tag }}
   release-github:
     needs: create-artifacts
-    if: github.event_name == 'push'
     permissions:
       contents: write
     uses: phylaxsystems/actions/.github/workflows/release-github.yaml@main
