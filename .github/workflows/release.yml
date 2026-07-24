@@ -31,11 +31,27 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: phylaxsystems/actions/release-npm@main
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          artifact_name: credible-layer-contracts-artifacts
-          artifacts_path: artifacts/
-          ignore_scripts: true
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # npm >= 11.5.1 is required for OIDC trusted publishing.
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: credible-layer-contracts-artifacts
+          path: artifacts/
+
+      - name: Publish to npm
+        run: npm publish --access public --ignore-scripts=true
   release-github:
     needs: create-artifacts
     permissions:
