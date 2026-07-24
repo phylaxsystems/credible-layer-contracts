@@ -1,0 +1,17 @@
+[package]
+name = "credible-layer-contracts"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Phylax Systems"]
+license = "MIT OR Apache-2.0"
+description = "Alloy Rust bindings for the Credible Layer protocol contracts"
+repository = "https://github.com/phylaxsystems/credible-layer-contracts"
+homepage = "https://github.com/phylaxsystems/credible-layer-contracts"
+readme = "README.md"
+keywords = ["ethereum", "solidity", "abi", "bindings", "credible-layer"]
+publish = ["crates-io"]
+include = ["src/**", "abi/StateOracle.json", "README.md", "RELEASING.md"]
+
+[dependencies]
+alloy-sol-types = { version = "1.6.1", features = ["json"] }

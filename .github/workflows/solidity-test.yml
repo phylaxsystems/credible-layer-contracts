@@ -13,6 +13,29 @@ jobs:
       - name: Test release configuration
         run: python3 test/release/test_release_workflow.py
 
+  rust-bindings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+      - name: Setup Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt --no-self-update
+          rustup default stable
+      - name: Verify generated ABI and Cargo package
+        run: |
+          ./shell/create_artifacts.sh
+          git diff --exit-code -- bindings/rust/abi/StateOracle.json
+          cargo fmt --manifest-path bindings/rust/Cargo.toml -- --check
+          cargo clippy --manifest-path bindings/rust/Cargo.toml --all-targets -- -D warnings -D clippy::pedantic
+          cargo test --manifest-path bindings/rust/Cargo.toml
+          cargo publish --manifest-path bindings/rust/Cargo.toml --dry-run
+
   solidity-base:
     uses: phylaxsystems/actions/.github/workflows/solidity-base.yaml@main
     with:

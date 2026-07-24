@@ -51,3 +51,11 @@ extract_abi "$ROOT_DIR/out/IAdminVerifier.sol/IAdminVerifier.json" "${INTERFACES
 # Extract ABIs for libraries
 LIBRARIES="${ARTIFACTS}/libraries"
 extract_abi "$ROOT_DIR/out/AdminVerifierRegistry.sol/AdminVerifierRegistry.json" "${LIBRARIES}"
+
+# Keep the committed Rust binding input byte-for-byte aligned with the ABI
+# published to npm. This snapshot lets Cargo git dependencies build without
+# Foundry or initialized submodules.
+RUST_BINDINGS_ABI="${ROOT_DIR}/bindings/rust/abi"
+mkdir -p "${RUST_BINDINGS_ABI}"
+cp "${ARTIFACTS}/StateOracle.json" "${RUST_BINDINGS_ABI}/StateOracle.json"
+echo "Synced StateOracle ABI to ${RUST_BINDINGS_ABI}/StateOracle.json"

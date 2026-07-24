@@ -17,6 +17,10 @@ docs/
 
 artifacts/
 
+# The Rust bindings crate is a library; consumers resolve their own lockfile.
+bindings/rust/Cargo.lock
+bindings/rust/target/
+
 # macOS system files
 .DS_Store
 **/.DS_Store

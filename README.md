@@ -117,6 +117,29 @@ State Oracle Proxy deployed at <address>
 
 ## Installation
 
+### Rust bindings
+
+Each tagged release publishes the StateOracle ABI as the
+`credible-layer-contracts` Cargo crate. Registry consumers can install it with:
+
+```bash
+cargo add credible-layer-contracts
+```
+
+For an unreleased revision, Cargo can resolve the crate directly from this
+repository. Pin a commit rather than a branch or tag:
+
+```toml
+[dependencies]
+credible-layer-contracts = { git = "https://github.com/phylaxsystems/credible-layer-contracts.git", rev = "<commit>" }
+```
+
+Both forms expose the generated binding as
+`credible_layer_contracts::StateOracle`. The committed ABI snapshot allows git
+consumers to build without installing Foundry or initializing submodules.
+
+### Solidity development
+
 1. Clone the repository:
 
 ```bash
