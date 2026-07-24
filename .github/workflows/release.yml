@@ -26,14 +26,16 @@ jobs:
           path: artifacts/
   release-npm:
     needs: create-artifacts
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
-    uses: phylaxsystems/actions/.github/workflows/release-npm.yaml@main
-    with:
-      artifact_name: credible-layer-contracts-artifacts
-      artifacts_path: artifacts/
-      ignore_scripts: true
+    steps:
+      - uses: phylaxsystems/actions/release-npm@main
+        with:
+          artifact_name: credible-layer-contracts-artifacts
+          artifacts_path: artifacts/
+          ignore_scripts: true
   release-github:
     needs: create-artifacts
     permissions:
