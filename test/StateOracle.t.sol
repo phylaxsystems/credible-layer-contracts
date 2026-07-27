@@ -202,6 +202,36 @@ contract AddAssertion is StateOracleBase {
         assertEq(stateOracle.getAssertionCount(adopter), 1, "Assertion count should increase");
     }
 
+    function testFuzz_addRemoveAssertionSequence(bytes32 assertionId, uint8 operations) public {
+        (address adopter, address manager) = registerAssertionAdopter();
+        bool isEnabled;
+
+        vm.startPrank(manager);
+        for (uint256 i = 0; i < 8; i++) {
+            bool shouldAdd = ((operations >> i) & 1) == 1;
+
+            if (shouldAdd) {
+                if (isEnabled) {
+                    vm.expectRevert(StateOracle.AssertionAlreadyExists.selector);
+                } else {
+                    isEnabled = true;
+                }
+                stateOracle.addAssertion(adopter, assertionId, daVerifierMock, new bytes(0), new bytes(0));
+            } else {
+                if (isEnabled) {
+                    isEnabled = false;
+                } else {
+                    vm.expectRevert(StateOracle.AssertionDoesNotExist.selector);
+                }
+                stateOracle.removeAssertion(adopter, assertionId);
+            }
+
+            assertEq(stateOracle.hasAssertion(adopter, assertionId), isEnabled, "Assertion state mismatch");
+            assertEq(stateOracle.getAssertionCount(adopter), isEnabled ? 1 : 0, "Assertion count mismatch");
+        }
+        vm.stopPrank();
+    }
+
     function testFuzz_RevertIf_addAssertionNotRegistered(address adopter, bytes32 assertionId) public {
         vm.prank(address(1));
         vm.expectRevert(StateOracle.AssertionAdopterNotRegistered.selector);

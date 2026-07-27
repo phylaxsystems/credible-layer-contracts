@@ -117,6 +117,23 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
         assertFalse(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be disabled after removal");
     }
 
+    function test_addAndRemoveAssertionAcrossMultipleCycles() public {
+        (bytes32 assertionId, bytes memory metadata, bytes memory proof) =
+            _generateValidAssertion(bytes32(uint256(0x1212)));
+
+        vm.startPrank(manager);
+        for (uint256 i = 0; i < 3; i++) {
+            stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
+            assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be enabled after add");
+            assertEq(stateOracle.getAssertionCount(adopter), 1, "Assertion count should increase after add");
+
+            stateOracle.removeAssertion(adopter, assertionId);
+            assertFalse(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be disabled after removal");
+            assertEq(stateOracle.getAssertionCount(adopter), 0, "Assertion count should decrease after removal");
+        }
+        vm.stopPrank();
+    }
+
     function test_readdAssertionWithValidProof() public {
         (bytes32 assertionId, bytes memory metadata, bytes memory proof) =
             _generateValidAssertion(bytes32(uint256(0x2222)));
