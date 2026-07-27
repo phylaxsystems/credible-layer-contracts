@@ -89,9 +89,6 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
         stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be added");
-        (uint256 activationBlock, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
-        assertEq(activationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Activation mismatch");
-        assertEq(deactivationBlock, 0, "Deactivation should be 0");
     }
 
     function test_RevertIf_addAssertionWithInvalidProof() public {
@@ -111,18 +108,44 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
         stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should exist after add");
-        (uint256 activationBlock,) = stateOracle.getAssertionWindow(adopter, assertionId);
-        assertEq(activationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Activation mismatch");
 
         vm.roll(block.number + 1);
 
         vm.prank(manager);
         stateOracle.removeAssertion(adopter, assertionId);
 
-        (, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
-        assertEq(
-            deactivationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Deactivation block mismatch"
-        );
+        assertFalse(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be disabled after removal");
+    }
+
+    function test_readdAssertionWithValidProof() public {
+        (bytes32 assertionId, bytes memory metadata, bytes memory proof) =
+            _generateValidAssertion(bytes32(uint256(0x2222)));
+
+        vm.startPrank(manager);
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
+        stateOracle.removeAssertion(adopter, assertionId);
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
+        vm.stopPrank();
+
+        assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be re-enabled");
+        assertEq(stateOracle.getAssertionCount(adopter), 1, "Assertion count should match enabled assertions");
+    }
+
+    function test_RevertIf_readdAssertionWithInvalidProof() public {
+        (bytes32 assertionId, bytes memory metadata, bytes memory proof) =
+            _generateValidAssertion(bytes32(uint256(0x3333)));
+        (, bytes memory invalidMetadata, bytes memory invalidProof) =
+            _generateInvalidAssertion(bytes32(uint256(0x4444)));
+
+        vm.startPrank(manager);
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
+        stateOracle.removeAssertion(adopter, assertionId);
+        vm.expectRevert(abi.encodeWithSelector(StateOracle.InvalidDAProof.selector, daVerifier));
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, invalidMetadata, invalidProof);
+        vm.stopPrank();
+
+        assertFalse(stateOracle.hasAssertion(adopter, assertionId), "Assertion should remain disabled");
+        assertEq(stateOracle.getAssertionCount(adopter), 0, "Assertion count should not change");
     }
 
     function test_addMultipleAssertions() public {
