@@ -39,6 +39,8 @@ mkdir -p "$ARTIFACTS" \
 
 # Extract ABIs for main contracts
 extract_abi "$ROOT_DIR/out/StateOracle.sol/StateOracle.json" "${ARTIFACTS}"
+extract_abi "$ROOT_DIR/out/StateOracleV2.sol/StateOracleV2.json" "${ARTIFACTS}"
+extract_abi "$ROOT_DIR/out/TriggerManifestValidatorV1.sol/TriggerManifestValidatorV1.json" "${ARTIFACTS}"
 extract_abi "$ROOT_DIR/out/AdminVerifierOwner.sol/AdminVerifierOwner.json" "${ARTIFACTS}"
 extract_abi "$ROOT_DIR/out/DAVerifierECDSA.sol/DAVerifierECDSA.json" "${ARTIFACTS}"
 
@@ -47,6 +49,7 @@ INTERFACES="${ARTIFACTS}/interfaces"
 extract_abi "$ROOT_DIR/out/IBatch.sol/IBatch.json" "${INTERFACES}"
 extract_abi "$ROOT_DIR/out/IDAVerifier.sol/IDAVerifier.json" "${INTERFACES}"
 extract_abi "$ROOT_DIR/out/IAdminVerifier.sol/IAdminVerifier.json" "${INTERFACES}"
+extract_abi "$ROOT_DIR/out/ITriggerManifestValidator.sol/ITriggerManifestValidator.json" "${INTERFACES}"
 
 # Extract ABIs for libraries
 LIBRARIES="${ARTIFACTS}/libraries"

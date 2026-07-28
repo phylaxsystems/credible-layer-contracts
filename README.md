@@ -73,9 +73,21 @@ The State Oracle owner retains privileged controls as a safety net for protocol 
 
 These controls are intended strictly for emergency response scenarios—such as attacks or lost manager keys—and should be exercised with operational safeguards to avoid disrupting legitimate protocol activity.
 
+### State Oracle V2
+
+`StateOracleV2` is a fresh-deployment project-scoped oracle. A project has one protocol manager, zero or more assertion adopters, and an aggregate trigger-unit limit. Contract admins request assignment through a registered admin verifier and the target protocol manager accepts it. The protocol manager then adds and removes assertions for every adopter in the project.
+
+Assertion IDs remain `keccak256(finalDeploymentBytecode)`. Trigger configuration is passed separately as a first-class manifest and validated by `TriggerManifestValidatorV1`; its proof must be signed by the configured manifest attestor over the deployment hash and manifest commitment. All V1 trigger weights start at one and future weight changes affect only new installations. V2 has no caller whitelist or assertion-count limit. A transaction-scoped EIP-1153 guard shared by direct and batched calls permits at most one assertion-lifecycle event (`AssertionAdded` or `AssertionRemoved`) and one storage-reset event per transaction. The guard resets between transactions and does not limit events per block, so the target chain must support Cancun. After removal, that assertion ID cannot be re-added to the adopter until its prior deactivation block.
+
+V2 has no privileged migration mode or import API. Existing production state is reconstructed through the normal project creation, adopter assignment, and assertion addition flows while V1 remains canonical. Consumers switch only after every addition is confirmed, its `activationBlock` has been reached, and the event has been checkpointed; exactly one oracle is authoritative at any time.
+
 ### Deployment
 
 The deployment scripts (`script/DeployCore.s.sol`, `script/DeployCoreWithCreateX.s.sol`, and `script/DeployCoreWithStaging.s.sol`) provision the core protocol with both `DAVerifierECDSA` and `DAVerifierOnChain` implementations. Both DA verifiers are deployed and registered in the DA verifier registry during initialization, allowing managers to select either mechanism when adding assertions.
+
+For a production-only V2 deployment, use `FOUNDRY_PROFILE=v2 forge script script/DeployCoreV2.s.sol`. The dedicated optimized profile leaves legacy deployment bytecode unchanged and provides ample EIP-170 size headroom; `make check-v2-size` verifies it. The script also deploys `TriggerManifestValidatorV1` and requires `TRIGGER_MANIFEST_ATTESTOR_ADDRESS`. V2 initially grants governance, guardian, project-creator, and trigger-limit roles to `STATE_ORACLE_ADMIN_ADDRESS`; transfer the operational roles to their distinct production accounts before use.
+
+`STATE_ORACLE_EVENT_CONFIRMATION_DEPTH` must match the GraphQL consumers' configured confirmation depth. Deployment requires `confirmationDepth + 1 < STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS`, leaving at least one complete processing block before an assertion activation or deactivation becomes effective. Consumers also verify the deployed oracle address and timelock through the event source at startup and fail closed if the live configuration differs.
 
 ### Environment Variables
 
@@ -88,6 +100,8 @@ Set the following environment variables before running the deployment scripts:
 - `DEPLOY_ADMIN_VERIFIER_OWNER` (true/false)
 - `DEPLOY_ADMIN_VERIFIER_WHITELIST` (true/false)
 - `ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS` (required when whitelist verifier is enabled)
+
+`DeployCoreV2.s.sol` additionally requires `STATE_ORACLE_EVENT_CONFIRMATION_DEPTH` and `TRIGGER_MANIFEST_ATTESTOR_ADDRESS`; the latter must be the address derived from the Assertion DA server's `DA_MANIFEST_ATTESTOR_PRIVATE_KEY`. It does not use `STATE_ORACLE_MAX_ASSERTIONS_PER_AA`.
 
 The following additional variables apply only to `DeployCoreWithStaging.s.sol`:
 

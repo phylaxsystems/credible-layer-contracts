@@ -1,4 +1,4 @@
-.PHONY: check-storage-layout update-storage-layout
+.PHONY: check-storage-layout update-storage-layout check-v2-size
 
 check-storage-layout:
 	@bash shell/check_storage_layout.sh
@@ -6,3 +6,6 @@ check-storage-layout:
 update-storage-layout:
 	forge inspect StateOracle storage-layout --json > .storage-layout
 	@echo "Storage layout snapshot updated."
+
+check-v2-size:
+	FOUNDRY_PROFILE=v2 forge build --sizes
