@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 import {Batch} from "../src/Batch.sol";
 import {StateOracleV2} from "../src/StateOracleV2.sol";
@@ -727,6 +728,8 @@ contract StateOracleV2ExecutorEventGuardTest is StateOracleV2TestBase {
 contract StateOracleV2InstalledAssertionTest is StateOracleV2TestBase {
     bytes32 internal constant ASSERTION_ID = bytes32(uint256(1));
     address internal assertionAdopter;
+    uint256 internal removalSetupBlock;
+    uint256 internal removalDeactivationBlock;
 
     function setUp() public override {
         super.setUp();
@@ -742,7 +745,21 @@ contract StateOracleV2InstalledAssertionTest is StateOracleV2TestBase {
             calls[0] = abi.encodeCall(this.setupSetAllCallsWeight, (4));
             calls[1] = abi.encodeCall(this.setupAddAssertion, (bytes32(uint256(2))));
             calls[2] = abi.encodeCall(this.setupRemoveAssertion, (ASSERTION_ID));
+        } else if (testSelector == this.test_canAddSameAssertionAfterRemovalInNextTransaction.selector) {
+            calls = new bytes[](1);
+            calls[0] = abi.encodeCall(this.setupRemoveAssertion, (ASSERTION_ID));
+        } else if (testSelector == this.test_sameBlockReaddSharesEffectiveBlockWithRemoval.selector) {
+            calls = new bytes[](1);
+            calls[0] = abi.encodeCall(this.setupRemoveAssertionRecordingDeactivation, ());
         }
+    }
+
+    function setupRemoveAssertionRecordingDeactivation() external {
+        removalSetupBlock = block.number;
+        vm.recordLogs();
+        vm.prank(PROTOCOL_MANAGER);
+        oracle.removeAssertion(assertionAdopter, ASSERTION_ID);
+        removalDeactivationBlock = _effectiveBlockOf(vm.getRecordedLogs(), StateOracleV2.AssertionRemoved.selector);
     }
 
     function setupSetAllCallsWeight(uint32 weight) external {
@@ -755,35 +772,35 @@ contract StateOracleV2InstalledAssertionTest is StateOracleV2TestBase {
     }
 
     function setupRemoveAssertion(bytes32 assertionId) external {
+        removalSetupBlock = block.number;
         vm.prank(PROTOCOL_MANAGER);
         oracle.removeAssertion(assertionAdopter, assertionId);
     }
 
     function test_removalReleasesStoredUnits() public {
-        uint256 expectedNextAddAllowedFromBlock = block.number + TIMELOCK;
         vm.prank(PROTOCOL_MANAGER);
         oracle.removeAssertion(assertionAdopter, ASSERTION_ID);
         assertFalse(oracle.hasAssertion(assertionAdopter, ASSERTION_ID));
-        (, uint64 nextAddAllowedFromBlock,,,) = oracle.assertions(assertionAdopter, ASSERTION_ID);
-        assertEq(nextAddAllowedFromBlock, expectedNextAddAllowedFromBlock);
         (, uint64 used) = _usage(PROJECT_ID);
         assertEq(used, 0);
     }
 
-    function test_cannotReaddBeforePriorDeactivation() public {
-        vm.prank(PROTOCOL_MANAGER);
-        oracle.removeAssertion(assertionAdopter, ASSERTION_ID);
-
+    function test_canAddSameAssertionAfterRemovalInNextTransaction() public {
+        assertEq(block.number, removalSetupBlock);
+        assertFalse(oracle.hasAssertion(assertionAdopter, ASSERTION_ID));
         StateOracleV2.AssertionArtifact memory artifact = _artifact(ASSERTION_ID);
         StateOracleV2.DAProof memory proof = StateOracleV2.DAProof({verifier: daVerifier, metadata: "", proof: ""});
         vm.prank(PROTOCOL_MANAGER);
-        vm.expectRevert(StateOracleV2.AssertionAddNotYetAllowed.selector);
         oracle.addAssertion(assertionAdopter, artifact, proof);
+
+        assertTrue(oracle.hasAssertion(assertionAdopter, ASSERTION_ID));
+        (, uint64 used) = _usage(PROJECT_ID);
+        assertEq(used, 1);
     }
 
     function test_weightChangesOnlyAffectNewInstallations() public view {
-        (uint64 originalTriggerUnits,,,, bool originalEnabled) = oracle.assertions(assertionAdopter, ASSERTION_ID);
-        (uint64 newTriggerUnits,,,, bool newEnabled) = oracle.assertions(assertionAdopter, bytes32(uint256(2)));
+        (uint64 originalTriggerUnits,,, bool originalEnabled) = oracle.assertions(assertionAdopter, ASSERTION_ID);
+        (uint64 newTriggerUnits,,, bool newEnabled) = oracle.assertions(assertionAdopter, bytes32(uint256(2)));
         assertEq(originalTriggerUnits, 1);
         assertFalse(originalEnabled);
         assertEq(newTriggerUnits, 4);
@@ -801,5 +818,38 @@ contract StateOracleV2InstalledAssertionTest is StateOracleV2TestBase {
         oracle.retireProject(PROJECT_ID);
         (,,,,, StateOracleV2.ProjectStatus status) = oracle.projects(PROJECT_ID);
         assertEq(uint8(status), uint8(StateOracleV2.ProjectStatus.Retired));
+    }
+
+    /// @dev Removing and re-adding one assertion in the same block emits `AssertionRemoved` and
+    /// `AssertionAdded` for the same key carrying an identical effective block, because both
+    /// stamp `block.number + ASSERTION_TIMELOCK_BLOCKS`. Neither event carries an intra-block
+    /// sequence number, so consumers MUST resolve the pair by log order; the on-chain state that
+    /// log order reproduces is `enabled == true`. Changing this pins an executor requirement.
+    function test_sameBlockReaddSharesEffectiveBlockWithRemoval() public {
+        assertEq(block.number, removalSetupBlock);
+        assertEq(removalDeactivationBlock, removalSetupBlock + TIMELOCK);
+        assertFalse(oracle.hasAssertion(assertionAdopter, ASSERTION_ID));
+
+        StateOracleV2.AssertionArtifact memory artifact = _artifact(ASSERTION_ID);
+        StateOracleV2.DAProof memory proof = StateOracleV2.DAProof({verifier: daVerifier, metadata: "", proof: ""});
+        vm.recordLogs();
+        vm.prank(PROTOCOL_MANAGER);
+        oracle.addAssertion(assertionAdopter, artifact, proof);
+        uint256 activationBlock = _effectiveBlockOf(vm.getRecordedLogs(), StateOracleV2.AssertionAdded.selector);
+
+        assertEq(activationBlock, removalDeactivationBlock);
+        assertTrue(oracle.hasAssertion(assertionAdopter, ASSERTION_ID));
+    }
+
+    /// @dev Reads the first non-indexed field of the newest matching lifecycle event, which is
+    /// `activationBlock` for `AssertionAdded` and `deactivationBlock` for `AssertionRemoved`.
+    function _effectiveBlockOf(Vm.Log[] memory logs, bytes32 eventSelector) private pure returns (uint256) {
+        for (uint256 i = logs.length; i != 0; --i) {
+            Vm.Log memory log = logs[i - 1];
+            if (log.topics.length != 0 && log.topics[0] == eventSelector) {
+                return abi.decode(log.data, (uint256));
+            }
+        }
+        revert("lifecycle event not found");
     }
 }

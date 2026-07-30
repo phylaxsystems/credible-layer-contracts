@@ -66,7 +66,6 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
 
     struct AssertionInstallation {
         uint64 triggerUnits;
-        uint64 nextAddAllowedFromBlock;
         bytes32 manifestSchemaId;
         bytes32 manifestHash;
         bool enabled;
@@ -94,7 +93,6 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     error AssertionAdopterHasAssertions();
     error AssertionAlreadyExists();
     error AssertionDoesNotExist();
-    error AssertionAddNotYetAllowed();
     error InvalidAssertionId();
     error EffectiveBlockOverflow();
     error DAVerifierNotRegistered();
@@ -417,7 +415,6 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         require(assertionId != bytes32(0), InvalidAssertionId());
         AssertionInstallation storage installation = assertions[assertionAdopter][assertionId];
         require(!installation.enabled, AssertionAlreadyExists());
-        require(block.number >= installation.nextAddAllowedFromBlock, AssertionAddNotYetAllowed());
         require(
             artifact.triggerManifest.data.length <= MAX_MANIFEST_DATA_LENGTH
                 && artifact.triggerManifest.proof.length <= MAX_MANIFEST_PROOF_LENGTH
@@ -447,7 +444,6 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         bytes32 manifestHash = keccak256(artifact.triggerManifest.data);
         assertions[assertionAdopter][assertionId] = AssertionInstallation({
             triggerUnits: triggerUnits,
-            nextAddAllowedFromBlock: 0,
             manifestSchemaId: artifact.triggerManifest.schemaId,
             manifestHash: manifestHash,
             enabled: true
@@ -465,7 +461,6 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
 
         installation.enabled = false;
         uint64 deactivationBlock = _effectiveBlock();
-        installation.nextAddAllowedFromBlock = deactivationBlock;
         assertionAdopters[assertionAdopter].assertionCount--;
         projects[projectId].usedTriggerUnits -= installation.triggerUnits;
         emit AssertionRemoved(projectId, assertionAdopter, assertionId, deactivationBlock, installation.triggerUnits);
