@@ -6,23 +6,20 @@ import {Test} from "forge-std/Test.sol";
 import {TriggerManifestValidatorV1} from "../src/verification/TriggerManifestValidatorV1.sol";
 
 contract TriggerManifestValidatorV1Test is Test {
-    uint256 private constant ATTESTOR_KEY = 0xA11E57;
-    bytes32 private constant DEPLOYMENT_CODE_HASH = keccak256("deployment code");
-
     TriggerManifestValidatorV1 internal validator;
     bytes32 internal schemaId;
 
     function setUp() public {
-        validator = new TriggerManifestValidatorV1(address(this), vm.addr(ATTESTOR_KEY));
+        validator = new TriggerManifestValidatorV1(address(this));
         schemaId = validator.SCHEMA_ID();
     }
 
-    function test_countsTriggersWithDefaultWeights() public view {
+    function test_structurallyValidManifestNeedsNoProofAndUsesDefaultWeights() public view {
         TriggerManifestValidatorV1.TriggerV1[] memory triggers = new TriggerManifestValidatorV1.TriggerV1[](1);
         triggers[0] = _trigger(TriggerManifestValidatorV1.TriggerKind.AllCalls);
 
         bytes memory data = _encode(triggers);
-        (uint32 count, uint64 units) = validator.validate(DEPLOYMENT_CODE_HASH, schemaId, data, _proof(data));
+        (uint32 count, uint64 units) = validator.validate(schemaId, data);
 
         assertEq(count, 1);
         assertEq(units, 1);
@@ -33,7 +30,7 @@ contract TriggerManifestValidatorV1Test is Test {
         _sort(triggers);
 
         bytes memory data = _encode(triggers);
-        (uint32 count, uint64 units) = validator.validate(DEPLOYMENT_CODE_HASH, schemaId, data, _proof(data));
+        (uint32 count, uint64 units) = validator.validate(schemaId, data);
 
         assertEq(count, 256);
         assertEq(units, 256);
@@ -42,10 +39,8 @@ contract TriggerManifestValidatorV1Test is Test {
     function test_rejectsMoreThanMaximumTriggerCount() public {
         TriggerManifestValidatorV1.TriggerV1[] memory triggers = _allCalls(validator.MAX_TRIGGERS() + 1);
         bytes memory data = _encode(triggers);
-        bytes memory proof = _proof(data);
-
         vm.expectRevert(TriggerManifestValidatorV1.InvalidTriggerCount.selector);
-        validator.validate(DEPLOYMENT_CODE_HASH, schemaId, data, proof);
+        validator.validate(schemaId, data);
     }
 
     function test_acceptsEveryTriggerKindWithCanonicalFields() public view {
@@ -57,7 +52,7 @@ contract TriggerManifestValidatorV1Test is Test {
         _sort(triggers);
 
         bytes memory data = _encode(triggers);
-        (uint32 count, uint64 units) = validator.validate(DEPLOYMENT_CODE_HASH, schemaId, data, _proof(data));
+        (uint32 count, uint64 units) = validator.validate(schemaId, data);
 
         assertEq(count, 11);
         assertEq(units, 11);
@@ -70,7 +65,7 @@ contract TriggerManifestValidatorV1Test is Test {
         triggers[0].triggerSelector = bytes4(keccak256("deposit()"));
 
         bytes memory data = _encode(triggers);
-        (, uint64 units) = validator.validate(DEPLOYMENT_CODE_HASH, schemaId, data, _proof(data));
+        (, uint64 units) = validator.validate(schemaId, data);
 
         assertEq(units, 4);
     }
@@ -84,15 +79,13 @@ contract TriggerManifestValidatorV1Test is Test {
         if (uint256(firstHash) < uint256(secondHash)) (triggers[0], triggers[1]) = (triggers[1], triggers[0]);
 
         bytes memory data = _encode(triggers);
-        bytes memory proof = _proof(data);
         vm.expectRevert(TriggerManifestValidatorV1.NonCanonicalTriggerOrder.selector);
-        validator.validate(DEPLOYMENT_CODE_HASH, schemaId, data, proof);
+        validator.validate(schemaId, data);
 
         triggers[1] = triggers[0];
         data = _encode(triggers);
-        proof = _proof(data);
         vm.expectRevert(TriggerManifestValidatorV1.NonCanonicalTriggerOrder.selector);
-        validator.validate(DEPLOYMENT_CODE_HASH, schemaId, data, proof);
+        validator.validate(schemaId, data);
     }
 
     function test_rejectsInvalidFields() public {
@@ -100,17 +93,15 @@ contract TriggerManifestValidatorV1Test is Test {
         triggers[0] = _trigger(TriggerManifestValidatorV1.TriggerKind.AllCalls);
         triggers[0].target = address(1);
         bytes memory data = _encode(triggers);
-        bytes memory proof = _proof(data);
         vm.expectRevert(TriggerManifestValidatorV1.InvalidTrigger.selector);
-        validator.validate(DEPLOYMENT_CODE_HASH, schemaId, data, proof);
+        validator.validate(schemaId, data);
 
         triggers[0] = _trigger(TriggerManifestValidatorV1.TriggerKind.CumulativeOutflow);
         triggers[0].target = address(1);
         triggers[0].windowDuration = 9;
         data = _encode(triggers);
-        proof = _proof(data);
         vm.expectRevert(TriggerManifestValidatorV1.InvalidTrigger.selector);
-        validator.validate(DEPLOYMENT_CODE_HASH, schemaId, data, proof);
+        validator.validate(schemaId, data);
     }
 
     function test_rejectsNonCanonicalEncoding() public {
@@ -118,56 +109,22 @@ contract TriggerManifestValidatorV1Test is Test {
         triggers[0] = _trigger(TriggerManifestValidatorV1.TriggerKind.AllCalls);
 
         bytes memory data = bytes.concat(_encode(triggers), bytes32(uint256(1)));
-        bytes memory proof = _proof(data);
         vm.expectRevert(TriggerManifestValidatorV1.InvalidManifestEncoding.selector);
-        validator.validate(DEPLOYMENT_CODE_HASH, schemaId, data, proof);
+        validator.validate(schemaId, data);
     }
 
     function test_rejectsZeroTriggers() public {
         bytes memory data = _encode(new TriggerManifestValidatorV1.TriggerV1[](0));
-        bytes memory proof = _proof(data);
         vm.expectRevert(TriggerManifestValidatorV1.InvalidTriggerCount.selector);
-        validator.validate(DEPLOYMENT_CODE_HASH, schemaId, data, proof);
-    }
-
-    function test_rejectsTamperedManifestProof() public {
-        TriggerManifestValidatorV1.TriggerV1[] memory triggers = new TriggerManifestValidatorV1.TriggerV1[](1);
-        triggers[0] = _trigger(TriggerManifestValidatorV1.TriggerKind.AllCalls);
-        bytes memory data = _encode(triggers);
-        triggers[0].assertionFunction = bytes4(keccak256("differentAssertion()"));
-        bytes memory proof = _proof(_encode(triggers));
-
-        vm.expectRevert(TriggerManifestValidatorV1.InvalidManifestAttestation.selector);
-        validator.validate(DEPLOYMENT_CODE_HASH, schemaId, data, proof);
-    }
-
-    function test_attestationBindsDeploymentChainAndValidatorDomains() public {
-        TriggerManifestValidatorV1.TriggerV1[] memory triggers = new TriggerManifestValidatorV1.TriggerV1[](1);
-        triggers[0] = _trigger(TriggerManifestValidatorV1.TriggerKind.AllCalls);
-        bytes memory data = _encode(triggers);
-        bytes memory proof = _proof(data);
-
-        vm.expectRevert(TriggerManifestValidatorV1.InvalidManifestAttestation.selector);
-        validator.validate(keccak256("different code"), schemaId, data, proof);
-
-        TriggerManifestValidatorV1 otherValidator = new TriggerManifestValidatorV1(address(this), vm.addr(ATTESTOR_KEY));
-        bytes32 otherSchemaId = otherValidator.SCHEMA_ID();
-        vm.expectRevert(TriggerManifestValidatorV1.InvalidManifestAttestation.selector);
-        otherValidator.validate(DEPLOYMENT_CODE_HASH, otherSchemaId, data, proof);
-
-        vm.chainId(block.chainid + 1);
-        vm.expectRevert(TriggerManifestValidatorV1.InvalidManifestAttestation.selector);
-        validator.validate(DEPLOYMENT_CODE_HASH, schemaId, data, proof);
+        validator.validate(schemaId, data);
     }
 
     function test_rejectsWrongSchemaDomain() public {
         TriggerManifestValidatorV1.TriggerV1[] memory triggers = new TriggerManifestValidatorV1.TriggerV1[](1);
         triggers[0] = _trigger(TriggerManifestValidatorV1.TriggerKind.AllCalls);
         bytes memory data = _encode(triggers);
-        bytes memory proof = _proof(data);
-
         vm.expectRevert(TriggerManifestValidatorV1.InvalidManifestSchema.selector);
-        validator.validate(DEPLOYMENT_CODE_HASH, keccak256("different schema"), data, proof);
+        validator.validate(keccak256("different schema"), data);
     }
 
     function _trigger(TriggerManifestValidatorV1.TriggerKind kind)
@@ -236,10 +193,5 @@ contract TriggerManifestValidatorV1Test is Test {
 
     function _encode(TriggerManifestValidatorV1.TriggerV1[] memory triggers) private pure returns (bytes memory) {
         return abi.encode(TriggerManifestValidatorV1.AssertionManifestV1({version: 1, triggers: triggers}));
-    }
-
-    function _proof(bytes memory data) private view returns (bytes memory) {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ATTESTOR_KEY, validator.attestationDigest(DEPLOYMENT_CODE_HASH, data));
-        return abi.encodePacked(r, s, v);
     }
 }

@@ -20,7 +20,6 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     using DAVerifierRegistry for mapping(IDAVerifier verifier => bool registered);
 
     uint256 private constant MAX_MANIFEST_DATA_LENGTH = 65_536;
-    uint256 private constant MAX_MANIFEST_PROOF_LENGTH = 4_096;
     uint256 private constant MAX_DA_PROOF_LENGTH = 65_536;
     uint256 private constant MAX_DA_METADATA_LENGTH = 4_096;
     uint256 private constant MAX_ADMIN_DATA_LENGTH = 4_096;
@@ -50,7 +49,6 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     struct TriggerManifest {
         bytes32 schemaId;
         bytes data;
-        bytes proof;
     }
 
     struct AssertionArtifact {
@@ -452,19 +450,13 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         require(!installation.enabled, AssertionAlreadyExists());
         require(
             artifact.triggerManifest.data.length <= MAX_MANIFEST_DATA_LENGTH
-                && artifact.triggerManifest.proof.length <= MAX_MANIFEST_PROOF_LENGTH
                 && daProof.metadata.length <= MAX_DA_METADATA_LENGTH && daProof.proof.length <= MAX_DA_PROOF_LENGTH,
             DataTooLarge()
         );
 
         ITriggerManifestValidator validator = triggerManifestValidators[artifact.triggerManifest.schemaId];
         require(address(validator) != address(0), TriggerManifestValidatorNotRegistered());
-        (, uint64 triggerUnits) = validator.validate(
-            assertionId,
-            artifact.triggerManifest.schemaId,
-            artifact.triggerManifest.data,
-            artifact.triggerManifest.proof
-        );
+        (, uint64 triggerUnits) = validator.validate(artifact.triggerManifest.schemaId, artifact.triggerManifest.data);
         require(triggerUnits != 0, InvalidTriggerUnits());
 
         Project storage project = _activeProject(projectId);

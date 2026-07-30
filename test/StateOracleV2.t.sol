@@ -25,7 +25,6 @@ abstract contract StateOracleV2TestBase is Test, ProxyHelper {
     address internal constant ADOPTER_ADMIN = address(0xCAFE);
     bytes32 internal constant PROJECT_ID = keccak256("project");
     uint256 internal constant TIMELOCK = 10;
-    uint256 internal constant MANIFEST_ATTESTOR_KEY = 0xA11E57;
 
     StateOracleV2 internal oracle;
     IAdminVerifier internal adminVerifier;
@@ -36,7 +35,7 @@ abstract contract StateOracleV2TestBase is Test, ProxyHelper {
         StateOracleV2 implementation = new StateOracleV2(TIMELOCK);
         adminVerifier = IAdminVerifier(new AdminVerifierOwner());
         daVerifier = IDAVerifier(new DAVerifierMock());
-        manifestValidator = new TriggerManifestValidatorV1(ORACLE_ADMIN, vm.addr(MANIFEST_ATTESTOR_KEY));
+        manifestValidator = new TriggerManifestValidatorV1(ORACLE_ADMIN);
 
         IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](1);
         adminVerifiers[0] = adminVerifier;
@@ -93,12 +92,10 @@ abstract contract StateOracleV2TestBase is Test, ProxyHelper {
         });
         bytes memory manifestData =
             abi.encode(TriggerManifestValidatorV1.AssertionManifestV1({version: 1, triggers: triggers}));
-        (uint8 v, bytes32 r, bytes32 s) =
-            vm.sign(MANIFEST_ATTESTOR_KEY, manifestValidator.attestationDigest(assertionId, manifestData));
         return StateOracleV2.AssertionArtifact({
             deploymentCodeHash: assertionId,
             triggerManifest: StateOracleV2.TriggerManifest({
-                schemaId: manifestValidator.SCHEMA_ID(), data: manifestData, proof: abi.encodePacked(r, s, v)
+                schemaId: manifestValidator.SCHEMA_ID(), data: manifestData
             })
         });
     }
@@ -804,6 +801,9 @@ contract StateOracleV2AssertionTest is StateOracleV2TestBase {
             calls = new bytes[](2);
             calls[0] = abi.encodeCall(this.setupAddAssertion, (bytes32(uint256(1))));
             calls[1] = abi.encodeCall(this.setupAssignSecondAdopterAndAddAssertion, (bytes32(uint256(1))));
+        } else if (testSelector == this.test_sameManifestValidatesDifferentDeploymentCodeHashes.selector) {
+            calls = new bytes[](1);
+            calls[0] = abi.encodeCall(this.setupAddAssertion, (bytes32(uint256(1))));
         } else if (testSelector == this.test_noAssertionCountLimit.selector) {
             calls = new bytes[](10);
             for (uint256 i; i < calls.length; ++i) {
@@ -833,6 +833,18 @@ contract StateOracleV2AssertionTest is StateOracleV2TestBase {
     function test_sameAssertionOnTwoAdoptersConsumesUnitsTwice() public view {
         assertTrue(oracle.hasAssertion(assertionAdopter, bytes32(uint256(1))));
         assertTrue(oracle.hasAssertion(secondAdopter, bytes32(uint256(1))));
+        (, uint64 used) = _usage(PROJECT_ID);
+        assertEq(used, 2);
+    }
+
+    function test_sameManifestValidatesDifferentDeploymentCodeHashes() public {
+        bytes32 firstAssertionId = bytes32(uint256(1));
+        bytes32 secondAssertionId = bytes32(uint256(2));
+
+        _addAssertion(assertionAdopter, secondAssertionId);
+
+        assertTrue(oracle.hasAssertion(assertionAdopter, firstAssertionId));
+        assertTrue(oracle.hasAssertion(assertionAdopter, secondAssertionId));
         (, uint64 used) = _usage(PROJECT_ID);
         assertEq(used, 2);
     }
