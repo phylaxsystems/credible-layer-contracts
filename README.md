@@ -75,11 +75,13 @@ These controls are intended strictly for emergency response scenarios—such as 
 
 ### State Oracle V2
 
-`StateOracleV2` is a fresh-deployment project-scoped oracle. A project has one protocol manager, zero or more assertion adopters, and an aggregate trigger-unit limit. Contract admins request assignment through a registered admin verifier and the target protocol manager accepts it. The protocol manager then adds and removes assertions for every adopter in the project.
+`StateOracleV2` is a fresh-deployment project-scoped oracle. An active project normally has one protocol manager, zero or more assertion adopters, and an aggregate trigger-unit limit. Contract admins request assignment through a registered admin verifier and the target protocol manager accepts it. The protocol manager then adds and removes assertions for every adopter in the project.
+
+For manager-key recovery, a guardian clears both the current and pending protocol manager without changing assertions, assignments, limits, or usage. Governance can nominate a replacement only after both manager slots are clear, and the nominee must accept. Project creators have no recovery authority. Recovery remains available while paused; ordinary manager transfers do not.
 
 Assertion IDs remain `keccak256(finalDeploymentBytecode)`. Trigger configuration is passed separately as a first-class manifest and validated by `TriggerManifestValidatorV1`; its proof must be signed by the configured manifest attestor over the deployment hash and manifest commitment. All V1 trigger weights start at one and future weight changes affect only new installations. V2 has no caller whitelist or assertion-count limit. A transaction-scoped EIP-1153 guard shared by direct and batched calls permits at most one assertion-lifecycle event (`AssertionAdded` or `AssertionRemoved`) and one storage-reset event per transaction. The guard resets between transactions and does not limit events per block, so the target chain must support Cancun. After removal, that assertion ID cannot be re-added to the adopter until its prior deactivation block.
 
-V2 has no privileged migration mode or import API. Existing production state is reconstructed through the normal project creation, adopter assignment, and assertion addition flows while V1 remains canonical. Consumers switch only after every addition is confirmed, its `activationBlock` has been reached, and the event has been checkpointed; exactly one oracle is authoritative at any time.
+V2 starts empty and has no privileged migration mode or import API. Any legacy state recreation uses ordinary public flows and is outside the contract implementation.
 
 ### Deployment
 

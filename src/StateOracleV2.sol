@@ -66,7 +66,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
 
     struct AssertionInstallation {
         uint64 triggerUnits;
-        uint64 readdAfterBlock;
+        uint64 nextAddAllowedFromBlock;
         bytes32 manifestSchemaId;
         bytes32 manifestHash;
         bool enabled;
@@ -81,6 +81,8 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     error InvalidProtocolManager();
     error UnauthorizedProtocolManager();
     error NoPendingProtocolManager();
+    error ProtocolManagerAlreadyCleared();
+    error ProtocolManagerNotCleared();
     error TriggerLimitUnchanged();
     error TriggerLimitExceeded();
     error UnauthorizedRegistrant();
@@ -92,7 +94,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     error AssertionAdopterHasAssertions();
     error AssertionAlreadyExists();
     error AssertionDoesNotExist();
-    error AssertionReaddPending();
+    error AssertionAddNotYetAllowed();
     error InvalidAssertionId();
     error EffectiveBlockOverflow();
     error DAVerifierNotRegistered();
@@ -197,8 +199,31 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         emit ProtocolManagerTransferRequested(projectId, msg.sender, pendingProtocolManager);
     }
 
-    function acceptProtocolManagerTransfer(bytes32 projectId) external whenNotPaused {
+    function revokeProtocolManager(bytes32 projectId) external onlyGuardian {
         Project storage project = _activeProject(projectId);
+        require(
+            project.protocolManager != address(0) || project.pendingProtocolManager != address(0),
+            ProtocolManagerAlreadyCleared()
+        );
+        project.protocolManager = address(0);
+        project.pendingProtocolManager = address(0);
+        emit ProtocolManagerTransferred(projectId, address(0));
+    }
+
+    function proposeProtocolManagerReplacement(bytes32 projectId, address replacement) external onlyGovernance {
+        Project storage project = _activeProject(projectId);
+        require(
+            project.protocolManager == address(0) && project.pendingProtocolManager == address(0),
+            ProtocolManagerNotCleared()
+        );
+        require(replacement != address(0), InvalidProtocolManager());
+        project.pendingProtocolManager = replacement;
+        emit ProtocolManagerTransferRequested(projectId, address(0), replacement);
+    }
+
+    function acceptProtocolManagerTransfer(bytes32 projectId) external {
+        Project storage project = _activeProject(projectId);
+        if (project.protocolManager != address(0)) _requireNotPaused();
         address pendingProtocolManager = project.pendingProtocolManager;
         require(pendingProtocolManager != address(0), NoPendingProtocolManager());
         require(msg.sender == pendingProtocolManager, UnauthorizedProtocolManager());
@@ -392,7 +417,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         require(assertionId != bytes32(0), InvalidAssertionId());
         AssertionInstallation storage installation = assertions[assertionAdopter][assertionId];
         require(!installation.enabled, AssertionAlreadyExists());
-        require(block.number >= installation.readdAfterBlock, AssertionReaddPending());
+        require(block.number >= installation.nextAddAllowedFromBlock, AssertionAddNotYetAllowed());
         require(
             artifact.triggerManifest.data.length <= MAX_MANIFEST_DATA_LENGTH
                 && artifact.triggerManifest.proof.length <= MAX_MANIFEST_PROOF_LENGTH
@@ -422,7 +447,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         bytes32 manifestHash = keccak256(artifact.triggerManifest.data);
         assertions[assertionAdopter][assertionId] = AssertionInstallation({
             triggerUnits: triggerUnits,
-            readdAfterBlock: 0,
+            nextAddAllowedFromBlock: 0,
             manifestSchemaId: artifact.triggerManifest.schemaId,
             manifestHash: manifestHash,
             enabled: true
@@ -440,7 +465,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
 
         installation.enabled = false;
         uint64 deactivationBlock = _effectiveBlock();
-        installation.readdAfterBlock = deactivationBlock;
+        installation.nextAddAllowedFromBlock = deactivationBlock;
         assertionAdopters[assertionAdopter].assertionCount--;
         projects[projectId].usedTriggerUnits -= installation.triggerUnits;
         emit AssertionRemoved(projectId, assertionAdopter, assertionId, deactivationBlock, installation.triggerUnits);

@@ -232,6 +232,206 @@ contract StateOracleV2ProjectTest is StateOracleV2TestBase {
     }
 }
 
+contract StateOracleV2ProtocolManagerRecoveryTest is StateOracleV2TestBase {
+    address internal constant MALICIOUS_PENDING_MANAGER = address(0xBAD);
+    address internal constant REPLACEMENT_MANAGER = address(0xD00D);
+    address internal constant OTHER_REPLACEMENT_MANAGER = address(0xBEEF);
+    address internal constant GUARDIAN = address(0x600D);
+    address internal constant GOVERNANCE = address(0x600E);
+
+    function setUp() public override {
+        super.setUp();
+        vm.startPrank(ORACLE_ADMIN);
+        oracle.grantRole(oracle.GUARDIAN_ROLE(), GUARDIAN);
+        oracle.grantRole(oracle.GOVERNANCE_ROLE(), GOVERNANCE);
+        vm.stopPrank();
+        _createProject(PROJECT_ID, PROTOCOL_MANAGER);
+    }
+
+    function test_guardianRevocationPreservesProjectStateAndGovernanceRecoversManager() public {
+        _setLimit(PROJECT_ID, 2);
+        address assertionAdopter = _assignAdopter(PROJECT_ID);
+        bytes32 assertionId = bytes32(uint256(1));
+        _addAssertion(assertionAdopter, assertionId);
+
+        vm.prank(PROTOCOL_MANAGER);
+        oracle.requestProtocolManagerTransfer(PROJECT_ID, MALICIOUS_PENDING_MANAGER);
+
+        vm.expectRevert(StateOracleV2.ProtocolManagerNotCleared.selector);
+        vm.prank(GOVERNANCE);
+        oracle.proposeProtocolManagerReplacement(PROJECT_ID, REPLACEMENT_MANAGER);
+
+        vm.expectEmit(true, true, false, true, address(oracle));
+        emit StateOracleV2.ProtocolManagerTransferred(PROJECT_ID, address(0));
+        vm.prank(GUARDIAN);
+        oracle.revokeProtocolManager(PROJECT_ID);
+
+        (
+            address manager,
+            address pendingManager,
+            uint64 limit,
+            uint64 used,
+            uint64 retiredAtBlock,
+            StateOracleV2.ProjectStatus status
+        ) = oracle.projects(PROJECT_ID);
+        assertEq(manager, address(0));
+        assertEq(pendingManager, address(0));
+        assertEq(limit, 2);
+        assertEq(used, 1);
+        assertEq(retiredAtBlock, 0);
+        assertEq(uint8(status), uint8(StateOracleV2.ProjectStatus.Active));
+
+        (bytes32 assignedProject, bytes32 pendingProject, uint32 assertionCount) =
+            oracle.assertionAdopters(assertionAdopter);
+        assertEq(assignedProject, PROJECT_ID);
+        assertEq(pendingProject, bytes32(0));
+        assertEq(assertionCount, 1);
+        assertTrue(oracle.hasAssertion(assertionAdopter, assertionId));
+
+        vm.expectRevert(StateOracleV2.UnauthorizedProtocolManager.selector);
+        vm.prank(PROTOCOL_MANAGER);
+        oracle.resetStorage(assertionAdopter, bytes32(uint256(1)));
+
+        vm.expectRevert(StateOracleV2.InvalidProtocolManager.selector);
+        vm.prank(GOVERNANCE);
+        oracle.proposeProtocolManagerReplacement(PROJECT_ID, address(0));
+
+        vm.expectEmit(true, true, true, true, address(oracle));
+        emit StateOracleV2.ProtocolManagerTransferRequested(PROJECT_ID, address(0), REPLACEMENT_MANAGER);
+        vm.prank(GOVERNANCE);
+        oracle.proposeProtocolManagerReplacement(PROJECT_ID, REPLACEMENT_MANAGER);
+
+        vm.expectRevert(StateOracleV2.ProtocolManagerNotCleared.selector);
+        vm.prank(GOVERNANCE);
+        oracle.proposeProtocolManagerReplacement(PROJECT_ID, OTHER_REPLACEMENT_MANAGER);
+
+        vm.expectRevert(StateOracleV2.UnauthorizedProtocolManager.selector);
+        vm.prank(OTHER_REPLACEMENT_MANAGER);
+        oracle.acceptProtocolManagerTransfer(PROJECT_ID);
+
+        vm.expectEmit(true, true, false, true, address(oracle));
+        emit StateOracleV2.ProtocolManagerTransferred(PROJECT_ID, REPLACEMENT_MANAGER);
+        vm.prank(REPLACEMENT_MANAGER);
+        oracle.acceptProtocolManagerTransfer(PROJECT_ID);
+
+        vm.prank(REPLACEMENT_MANAGER);
+        oracle.resetStorage(assertionAdopter, bytes32(uint256(1)));
+
+        (manager, pendingManager,,,, status) = oracle.projects(PROJECT_ID);
+        assertEq(manager, REPLACEMENT_MANAGER);
+        assertEq(pendingManager, address(0));
+        assertEq(uint8(status), uint8(StateOracleV2.ProjectStatus.Active));
+        assertTrue(oracle.hasAssertion(assertionAdopter, assertionId));
+        (, used) = _usage(PROJECT_ID);
+        assertEq(used, 1);
+    }
+
+    function test_guardianCanClearGovernanceNominatedReplacement() public {
+        vm.prank(GUARDIAN);
+        oracle.revokeProtocolManager(PROJECT_ID);
+        vm.prank(GOVERNANCE);
+        oracle.proposeProtocolManagerReplacement(PROJECT_ID, REPLACEMENT_MANAGER);
+
+        vm.expectEmit(true, true, false, true, address(oracle));
+        emit StateOracleV2.ProtocolManagerTransferred(PROJECT_ID, address(0));
+        vm.prank(GUARDIAN);
+        oracle.revokeProtocolManager(PROJECT_ID);
+
+        (address manager, address pendingManager,,,,) = oracle.projects(PROJECT_ID);
+        assertEq(manager, address(0));
+        assertEq(pendingManager, address(0));
+
+        vm.expectRevert(StateOracleV2.ProtocolManagerAlreadyCleared.selector);
+        vm.prank(GUARDIAN);
+        oracle.revokeProtocolManager(PROJECT_ID);
+    }
+
+    function test_recoveryRejectsNonexistentAndRetiredProjects() public {
+        bytes32 nonexistentProjectId = keccak256("nonexistent");
+
+        vm.expectRevert(StateOracleV2.ProjectNotActive.selector);
+        vm.prank(GUARDIAN);
+        oracle.revokeProtocolManager(nonexistentProjectId);
+        vm.expectRevert(StateOracleV2.ProjectNotActive.selector);
+        vm.prank(GOVERNANCE);
+        oracle.proposeProtocolManagerReplacement(nonexistentProjectId, REPLACEMENT_MANAGER);
+
+        vm.prank(ORACLE_ADMIN);
+        oracle.retireProject(PROJECT_ID);
+
+        vm.expectRevert(StateOracleV2.ProjectNotActive.selector);
+        vm.prank(GUARDIAN);
+        oracle.revokeProtocolManager(PROJECT_ID);
+        vm.expectRevert(StateOracleV2.ProjectNotActive.selector);
+        vm.prank(GOVERNANCE);
+        oracle.proposeProtocolManagerReplacement(PROJECT_ID, REPLACEMENT_MANAGER);
+    }
+
+    function test_projectCreatorCannotRecoverProtocolManager() public {
+        address projectCreator = address(0xC0DE);
+        bytes32 projectCreatorRole = oracle.PROJECT_CREATOR_ROLE();
+        vm.prank(ORACLE_ADMIN);
+        oracle.grantRole(projectCreatorRole, projectCreator);
+
+        vm.expectPartialRevert(IAccessControl.AccessControlUnauthorizedAccount.selector);
+        vm.prank(projectCreator);
+        oracle.revokeProtocolManager(PROJECT_ID);
+
+        vm.prank(ORACLE_ADMIN);
+        oracle.revokeProtocolManager(PROJECT_ID);
+
+        vm.expectPartialRevert(IAccessControl.AccessControlUnauthorizedAccount.selector);
+        vm.prank(projectCreator);
+        oracle.proposeProtocolManagerReplacement(PROJECT_ID, REPLACEMENT_MANAGER);
+    }
+
+    function test_guardianAndGovernanceRecoveryRolesAreSeparated() public {
+        bytes32 guardianRole = oracle.GUARDIAN_ROLE();
+        bytes32 governanceRole = oracle.GOVERNANCE_ROLE();
+
+        vm.prank(GUARDIAN);
+        oracle.revokeProtocolManager(PROJECT_ID);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, GUARDIAN, governanceRole)
+        );
+        vm.prank(GUARDIAN);
+        oracle.proposeProtocolManagerReplacement(PROJECT_ID, REPLACEMENT_MANAGER);
+
+        vm.prank(GOVERNANCE);
+        oracle.proposeProtocolManagerReplacement(PROJECT_ID, REPLACEMENT_MANAGER);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, GOVERNANCE, guardianRole)
+        );
+        vm.prank(GOVERNANCE);
+        oracle.revokeProtocolManager(PROJECT_ID);
+    }
+
+    function test_recoveryWorksWhilePausedButNormalTransferAcceptanceDoesNot() public {
+        vm.prank(PROTOCOL_MANAGER);
+        oracle.requestProtocolManagerTransfer(PROJECT_ID, REPLACEMENT_MANAGER);
+        vm.prank(ORACLE_ADMIN);
+        oracle.pause();
+
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.prank(REPLACEMENT_MANAGER);
+        oracle.acceptProtocolManagerTransfer(PROJECT_ID);
+
+        vm.prank(GUARDIAN);
+        oracle.revokeProtocolManager(PROJECT_ID);
+        vm.prank(GOVERNANCE);
+        oracle.proposeProtocolManagerReplacement(PROJECT_ID, REPLACEMENT_MANAGER);
+        vm.prank(REPLACEMENT_MANAGER);
+        oracle.acceptProtocolManagerTransfer(PROJECT_ID);
+
+        (address manager, address pendingManager,,,,) = oracle.projects(PROJECT_ID);
+        assertEq(manager, REPLACEMENT_MANAGER);
+        assertEq(pendingManager, address(0));
+        assertTrue(oracle.paused());
+    }
+}
+
 contract StateOracleV2AssignmentTest is StateOracleV2TestBase {
     function setUp() public virtual override {
         super.setUp();
@@ -560,12 +760,12 @@ contract StateOracleV2InstalledAssertionTest is StateOracleV2TestBase {
     }
 
     function test_removalReleasesStoredUnits() public {
-        uint256 expectedReaddAfterBlock = block.number + TIMELOCK;
+        uint256 expectedNextAddAllowedFromBlock = block.number + TIMELOCK;
         vm.prank(PROTOCOL_MANAGER);
         oracle.removeAssertion(assertionAdopter, ASSERTION_ID);
         assertFalse(oracle.hasAssertion(assertionAdopter, ASSERTION_ID));
-        (, uint64 readdAfterBlock,,,) = oracle.assertions(assertionAdopter, ASSERTION_ID);
-        assertEq(readdAfterBlock, expectedReaddAfterBlock);
+        (, uint64 nextAddAllowedFromBlock,,,) = oracle.assertions(assertionAdopter, ASSERTION_ID);
+        assertEq(nextAddAllowedFromBlock, expectedNextAddAllowedFromBlock);
         (, uint64 used) = _usage(PROJECT_ID);
         assertEq(used, 0);
     }
@@ -577,7 +777,7 @@ contract StateOracleV2InstalledAssertionTest is StateOracleV2TestBase {
         StateOracleV2.AssertionArtifact memory artifact = _artifact(ASSERTION_ID);
         StateOracleV2.DAProof memory proof = StateOracleV2.DAProof({verifier: daVerifier, metadata: "", proof: ""});
         vm.prank(PROTOCOL_MANAGER);
-        vm.expectRevert(StateOracleV2.AssertionReaddPending.selector);
+        vm.expectRevert(StateOracleV2.AssertionAddNotYetAllowed.selector);
         oracle.addAssertion(assertionAdopter, artifact, proof);
     }
 
