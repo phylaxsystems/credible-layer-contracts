@@ -82,6 +82,8 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     error NoPendingProtocolManager();
     error ProtocolManagerAlreadyCleared();
     error ProtocolManagerNotCleared();
+    error ProjectRetirementAlreadyRequested();
+    error ProjectRetirementNotRequested();
     error TriggerLimitUnchanged();
     error TriggerLimitExceeded();
     error UnauthorizedRegistrant();
@@ -109,6 +111,8 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     );
     event ProtocolManagerTransferred(bytes32 indexed projectId, address indexed protocolManager);
     event ProjectTriggerLimitUpdated(bytes32 indexed projectId, uint64 oldLimit, uint64 newLimit);
+    event ProjectRetirementRequested(bytes32 indexed projectId, address indexed protocolManager);
+    event ProjectRetirementCancelled(bytes32 indexed projectId, address indexed protocolManager);
     event ProjectRetired(bytes32 indexed projectId, uint64 retiredAtBlock);
     event AssertionAdopterRegistrationRequested(
         address indexed assertionAdopter, bytes32 indexed projectId, IAdminVerifier indexed adminVerifier
@@ -148,6 +152,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     mapping(IAdminVerifier verifier => bool registered) public adminVerifiers;
     mapping(IDAVerifier verifier => bool registered) public daVerifiers;
     mapping(bytes32 schemaId => ITriggerManifestValidator validator) public triggerManifestValidators;
+    mapping(bytes32 projectId => address protocolManager) public projectRetirementRequesters;
 
     constructor(uint256 assertionTimelockBlocks) Ownable(msg.sender) {
         require(
@@ -203,12 +208,13 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
             project.protocolManager != address(0) || project.pendingProtocolManager != address(0),
             ProtocolManagerAlreadyCleared()
         );
+        _clearProjectRetirementRequest(projectId);
         project.protocolManager = address(0);
         project.pendingProtocolManager = address(0);
         emit ProtocolManagerTransferred(projectId, address(0));
     }
 
-    function proposeProtocolManagerReplacement(bytes32 projectId, address replacement) external onlyGovernance {
+    function proposeProtocolManagerReplacement(bytes32 projectId, address replacement) external onlyProjectAdmin {
         Project storage project = _activeProject(projectId);
         require(
             project.protocolManager == address(0) && project.pendingProtocolManager == address(0),
@@ -225,6 +231,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         address pendingProtocolManager = project.pendingProtocolManager;
         require(pendingProtocolManager != address(0), NoPendingProtocolManager());
         require(msg.sender == pendingProtocolManager, UnauthorizedProtocolManager());
+        _clearProjectRetirementRequest(projectId);
         project.protocolManager = pendingProtocolManager;
         project.pendingProtocolManager = address(0);
         emit ProtocolManagerTransferred(projectId, pendingProtocolManager);
@@ -238,12 +245,33 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         emit ProjectTriggerLimitUpdated(projectId, oldLimit, newLimit);
     }
 
-    function retireProject(bytes32 projectId) external onlyGuardian {
+    function requestProjectRetirement(bytes32 projectId) external whenNotPaused {
         Project storage project = _activeProject(projectId);
+        require(msg.sender == project.protocolManager, UnauthorizedProtocolManager());
+        require(projectRetirementRequesters[projectId] == address(0), ProjectRetirementAlreadyRequested());
+        projectRetirementRequesters[projectId] = msg.sender;
+        emit ProjectRetirementRequested(projectId, msg.sender);
+    }
+
+    function cancelProjectRetirement(bytes32 projectId) external whenNotPaused {
+        Project storage project = _activeProject(projectId);
+        require(msg.sender == project.protocolManager, UnauthorizedProtocolManager());
+        require(projectRetirementRequesters[projectId] == msg.sender, ProjectRetirementNotRequested());
+        _clearProjectRetirementRequest(projectId);
+    }
+
+    function finalizeProjectRetirement(bytes32 projectId) external onlyProjectAdmin {
+        Project storage project = _activeProject(projectId);
+        address retirementRequester = projectRetirementRequesters[projectId];
+        require(
+            retirementRequester != address(0) && retirementRequester == project.protocolManager,
+            ProjectRetirementNotRequested()
+        );
         require(project.usedTriggerUnits == 0, ProjectHasAssertions());
         uint64 retiredAtBlock = uint64(block.number);
         project.protocolManager = address(0);
         project.pendingProtocolManager = address(0);
+        delete projectRetirementRequesters[projectId];
         project.triggerLimit = 0;
         project.status = ProjectStatus.Retired;
         project.retiredAtBlock = retiredAtBlock;
@@ -260,9 +288,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         require(data.length <= MAX_ADMIN_DATA_LENGTH, DataTooLarge());
         _activeProject(projectId);
         AssertionAdopter storage assignment = assertionAdopters[assertionAdopter];
-        if (assignment.projectId != bytes32(0)) {
-            require(projects[assignment.projectId].status == ProjectStatus.Retired, AssertionAdopterAlreadyAssigned());
-        }
+        require(assignment.projectId == bytes32(0), AssertionAdopterAlreadyAssigned());
         require(assignment.pendingProjectId == bytes32(0), PendingAssignmentExists());
         require(adminVerifiers.isRegistered(adminVerifier), AdminVerifierRegistry.AdminVerifierNotRegistered());
         require(adminVerifier.verifyAdmin(assertionAdopter, msg.sender, data), UnauthorizedRegistrant());
@@ -304,9 +330,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         require(projectId != bytes32(0), NoPendingAssignment());
         Project storage project = _activeProject(projectId);
         require(msg.sender == project.protocolManager, UnauthorizedProtocolManager());
-        if (assignment.projectId != bytes32(0)) {
-            require(projects[assignment.projectId].status == ProjectStatus.Retired, AssertionAdopterAlreadyAssigned());
-        }
+        require(assignment.projectId == bytes32(0), AssertionAdopterAlreadyAssigned());
         assignment.projectId = projectId;
         assignment.pendingProjectId = bytes32(0);
         emit AssertionAdopterAdded(assertionAdopter, projectId);
@@ -316,8 +340,12 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         AssertionAdopter storage assignment = assertionAdopters[assertionAdopter];
         bytes32 projectId = assignment.projectId;
         require(projectId != bytes32(0), AssertionAdopterNotAssigned());
-        Project storage project = _activeProject(projectId);
-        require(msg.sender == project.protocolManager, UnauthorizedProtocolManager());
+        Project storage project = projects[projectId];
+        require(
+            project.status == ProjectStatus.Retired
+                || (project.status == ProjectStatus.Active && msg.sender == project.protocolManager),
+            UnauthorizedProtocolManager()
+        );
         require(assignment.assertionCount == 0, AssertionAdopterHasAssertions());
         assignment.projectId = bytes32(0);
         emit AssertionAdopterDetached(assertionAdopter, projectId);
@@ -403,6 +431,13 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         require(projectId != bytes32(0), AssertionAdopterNotAssigned());
         Project storage project = _activeProject(projectId);
         require(project.protocolManager == account, UnauthorizedProtocolManager());
+    }
+
+    function _clearProjectRetirementRequest(bytes32 projectId) private {
+        address requester = projectRetirementRequesters[projectId];
+        if (requester == address(0)) return;
+        delete projectRetirementRequesters[projectId];
+        emit ProjectRetirementCancelled(projectId, requester);
     }
 
     function _addAssertion(

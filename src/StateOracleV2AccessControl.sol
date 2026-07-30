@@ -10,6 +10,7 @@ abstract contract StateOracleV2AccessControl is Ownable2Step, AccessControl {
     bytes32 public constant GUARDIAN_ADMIN_ROLE = keccak256("GUARDIAN_ADMIN_ROLE");
     bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
     bytes32 public constant PROJECT_CREATOR_ROLE = keccak256("PROJECT_CREATOR_ROLE");
+    bytes32 public constant PROJECT_ADMIN_ROLE = keccak256("PROJECT_ADMIN_ROLE");
     bytes32 public constant TRIGGER_LIMIT_ROLE = keccak256("TRIGGER_LIMIT_ROLE");
 
     error CannotGrantDefaultAdminRole();
@@ -26,12 +27,18 @@ abstract contract StateOracleV2AccessControl is Ownable2Step, AccessControl {
         _;
     }
 
+    modifier onlyProjectAdmin() {
+        _checkRole(PROJECT_ADMIN_ROLE);
+        _;
+    }
+
     function _initializeRoles(address admin) internal {
         _transferOwnership(admin);
         _setRoleAdmin(GOVERNANCE_ROLE, DEFAULT_ADMIN_ROLE);
         _setRoleAdmin(GUARDIAN_ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
         _setRoleAdmin(GUARDIAN_ROLE, GUARDIAN_ADMIN_ROLE);
         _setRoleAdmin(PROJECT_CREATOR_ROLE, DEFAULT_ADMIN_ROLE);
+        _setRoleAdmin(PROJECT_ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
         _setRoleAdmin(TRIGGER_LIMIT_ROLE, DEFAULT_ADMIN_ROLE);
 
         bytes32[] memory roles = _roles();
@@ -41,12 +48,13 @@ abstract contract StateOracleV2AccessControl is Ownable2Step, AccessControl {
     }
 
     function _roles() private pure returns (bytes32[] memory roles) {
-        roles = new bytes32[](5);
+        roles = new bytes32[](6);
         roles[0] = GOVERNANCE_ROLE;
         roles[1] = GUARDIAN_ADMIN_ROLE;
         roles[2] = GUARDIAN_ROLE;
         roles[3] = PROJECT_CREATOR_ROLE;
-        roles[4] = TRIGGER_LIMIT_ROLE;
+        roles[4] = PROJECT_ADMIN_ROLE;
+        roles[5] = TRIGGER_LIMIT_ROLE;
     }
 
     function _transferOwnership(address newOwner) internal virtual override {

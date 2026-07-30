@@ -35,7 +35,7 @@ Protocol admins attach assertions to their protocol by adding entries in the sta
 Network operators and/or block builders operate the assertion executor who adhere to the entries of
 the contracts and enforce the validation of assertions.
 
-#### State Oracle Behavior
+#### State Oracle V1 Behavior
 
 - Each assertion adopter maintains a manager and a set of enabled assertions.
 - Removing an assertion disables it, allowing the same assertion ID to be added again later with a new DA proof.
@@ -62,7 +62,7 @@ are available:
 
 Typical data availability layers include network-hosted DA servers, decentralized DA networks, and the underlying network itself.
 
-### State Oracle Administration
+### State Oracle V1 Administration
 
 The State Oracle owner retains privileged controls as a safety net for protocol operations:
 
@@ -77,7 +77,11 @@ These controls are intended strictly for emergency response scenarios—such as 
 
 `StateOracleV2` is a fresh-deployment project-scoped oracle. An active project normally has one protocol manager, zero or more assertion adopters, and an aggregate trigger-unit limit. Contract admins request assignment through a registered admin verifier and the target protocol manager accepts it. The protocol manager then adds and removes assertions for every adopter in the project.
 
-For manager-key recovery, a guardian clears both the current and pending protocol manager without changing assertions, assignments, limits, or usage. Governance can nominate a replacement only after both manager slots are clear, and the nominee must accept. Project creators have no recovery authority. Recovery remains available while paused; ordinary manager transfers do not.
+For manager-key recovery, a guardian clears both the current and pending protocol manager without changing assertions, assignments, limits, or usage. This quarantines the active project until the distinct project administrator nominates a replacement and that nominee accepts. Governance remains limited to protocol-wide pause and verifier configuration, while project creation, project administration, and trigger-limit administration use separate roles. Recovery remains available while paused; ordinary manager transfers do not.
+
+Retirement is a two-party terminal transition: the current protocol manager requests it and the project administrator finalizes it only after project usage reaches zero. In a healthy active project, only its protocol manager can detach an adopter after the installed assertion count reaches zero. A quarantined project must first recover a protocol manager; once the project is retired, any caller may perform that same zero-count detach, ensuring the adopter cannot remain permanently trapped behind a manager that no longer exists.
+
+V2 preserves explicit accounting invariants: every enabled assertion installation belongs to an adopter assigned to one active project; each adopter's assertion count equals its enabled installations; and the sum of project `usedTriggerUnits` equals the trigger units of all enabled installations. Removal updates installed state and accounting immediately but schedules executor deactivation at the timelocked event block, so a detached or retired adopter may still have a previously emitted generation completing its deactivation window. Additions enforce the project's limit at installation time; because limits may be lowered below current usage without removing coverage, current usage can temporarily exceed the new limit and further additions remain blocked.
 
 Assertion IDs remain `keccak256(finalDeploymentBytecode)`. Trigger configuration is passed separately as a first-class manifest and validated by `TriggerManifestValidatorV1`; its proof must be signed by the configured manifest attestor over the deployment hash and manifest commitment. All V1 trigger weights start at one and future weight changes affect only new installations. V2 has no caller whitelist or assertion-count limit. A transaction-scoped EIP-1153 guard shared by direct and batched calls permits at most one assertion-lifecycle event (`AssertionAdded` or `AssertionRemoved`) and one storage-reset event per transaction. The guard resets between transactions and does not limit events per block, so the target chain must support Cancun. A removed assertion ID may be added again in a later transaction, including another transaction in the same block; event consumers must retain its successive lifecycle windows. Same-block removal and re-addition share an effective boundary and preserve continuous coverage, while a next-block re-addition naturally leaves a one-block gap.
 
@@ -87,7 +91,7 @@ V2 starts empty and has no privileged migration mode or import API. Any legacy s
 
 The deployment scripts (`script/DeployCore.s.sol`, `script/DeployCoreWithCreateX.s.sol`, and `script/DeployCoreWithStaging.s.sol`) provision the core protocol with both `DAVerifierECDSA` and `DAVerifierOnChain` implementations. Both DA verifiers are deployed and registered in the DA verifier registry during initialization, allowing managers to select either mechanism when adding assertions.
 
-For a production-only V2 deployment, use `FOUNDRY_PROFILE=v2 forge script script/DeployCoreV2.s.sol`. The dedicated optimized profile leaves legacy deployment bytecode unchanged and provides ample EIP-170 size headroom; `make check-v2-size` verifies it. The script also deploys `TriggerManifestValidatorV1` and requires `TRIGGER_MANIFEST_ATTESTOR_ADDRESS`. V2 initially grants governance, guardian, project-creator, and trigger-limit roles to `STATE_ORACLE_ADMIN_ADDRESS`; transfer the operational roles to their distinct production accounts before use.
+For a production-only V2 deployment, use `FOUNDRY_PROFILE=v2 forge script script/DeployCoreV2.s.sol`. The dedicated optimized profile leaves legacy deployment bytecode unchanged and provides ample EIP-170 size headroom; `make check-v2-size` verifies it. The script also deploys `TriggerManifestValidatorV1` and requires `TRIGGER_MANIFEST_ATTESTOR_ADDRESS`. V2 initially grants governance, guardian, project-creator, project-admin, and trigger-limit roles to `STATE_ORACLE_ADMIN_ADDRESS`; hand those independently revocable capabilities to the intended production authorities before use. They may initially share an address without merging their permissions.
 
 `STATE_ORACLE_EVENT_CONFIRMATION_DEPTH` must match the GraphQL consumers' configured confirmation depth. Deployment requires `confirmationDepth + 1 < STATE_ORACLE_ASSERTION_TIMELOCK_BLOCKS`, leaving at least one complete processing block before an assertion activation or deactivation becomes effective. Consumers also verify the deployed oracle address and timelock through the event source at startup and fail closed if the live configuration differs.
 
