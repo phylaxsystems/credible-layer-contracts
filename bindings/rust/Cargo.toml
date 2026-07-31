@@ -11,7 +11,14 @@ homepage = "https://github.com/phylaxsystems/credible-layer-contracts"
 readme = "README.md"
 keywords = ["ethereum", "solidity", "abi", "bindings", "credible-layer"]
 publish = ["crates-io"]
-include = ["src/**", "abi/StateOracle.json", "README.md", "RELEASING.md"]
+include = [
+    "src/**",
+    "abi/StateOracle.json",
+    "README.md",
+    "RELEASING.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+]
 
 [dependencies]
 alloy-sol-types = { version = "1.6.1", features = ["json"] }

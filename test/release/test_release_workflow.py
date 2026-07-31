@@ -64,6 +64,18 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertEqual(cargo_package["publish"], ["crates-io"])
         self.assertEqual(cargo_package["license"], "MIT OR Apache-2.0")
 
+    def test_cargo_package_includes_repository_license_texts(self):
+        crate_root = ROOT / "bindings" / "rust"
+        with (crate_root / "Cargo.toml").open("rb") as manifest:
+            included_files = tomllib.load(manifest)["package"]["include"]
+
+        for license_name in ("LICENSE-MIT", "LICENSE-APACHE"):
+            self.assertIn(license_name, included_files)
+            self.assertEqual(
+                (crate_root / license_name).read_text().splitlines(),
+                (ROOT / license_name).read_text().splitlines(),
+            )
+
     def test_artifact_generation_updates_the_committed_rust_abi(self):
         script = (ROOT / "shell" / "create_artifacts.sh").read_text()
 
