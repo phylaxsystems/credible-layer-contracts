@@ -9,6 +9,21 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ReleaseWorkflowTest(unittest.TestCase):
+    def test_artifacts_are_verified_before_upload(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        artifact_job = workflow.split("  create-artifacts:\n", 1)[1].split(
+            "  release-npm-verify:\n", 1
+        )[0]
+
+        generation_index = artifact_job.index("run: ./shell/create_artifacts.sh")
+        verification_index = artifact_job.index(
+            "run: git diff --exit-code -- bindings/rust/abi/StateOracle.json"
+        )
+        upload_index = artifact_job.index("uses: actions/upload-artifact@")
+
+        self.assertLess(generation_index, verification_index)
+        self.assertLess(verification_index, upload_index)
+
     def test_npm_package_verification_has_no_oidc_permission(self):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
         verify_job = workflow.split("  release-npm-verify:\n", 1)[1].split(
