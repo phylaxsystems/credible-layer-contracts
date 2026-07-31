@@ -77,6 +77,8 @@ These controls are intended strictly for emergency response scenarios—such as 
 
 `StateOracleV2` is a fresh-deployment project-scoped oracle. An active project normally has one protocol manager, zero or more assertion adopters, and an aggregate trigger-unit limit. Contract admins request assignment through a registered admin verifier and the target protocol manager accepts it. The protocol manager then adds and removes assertions for every adopter in the project.
 
+See [StateOracle V2 Architecture, Roles, and Invariants](docs/STATE_ORACLE_V2.md) for the complete authority matrix, stored structs, pause behavior, lifecycle rules, accounting invariants, and executor-event contract.
+
 For manager-key recovery, a guardian clears both the current and pending protocol manager without changing assertions, assignments, limits, or usage. This quarantines the active project until the distinct project administrator nominates a replacement and that nominee accepts. Governance remains limited to protocol-wide pause and verifier configuration, while project creation, project administration, and trigger-limit administration use separate roles. Recovery remains available while paused; ordinary manager transfers do not.
 
 Retirement is a two-party terminal transition: the current protocol manager requests it and the project administrator finalizes it only after project usage reaches zero. In a healthy active project, only its protocol manager can detach an adopter after the installed assertion count reaches zero. A quarantined project must first recover a protocol manager; once the project is retired, any caller may perform that same zero-count detach, ensuring the adopter cannot remain permanently trapped behind a manager that no longer exists.
