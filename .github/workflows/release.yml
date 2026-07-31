@@ -199,10 +199,29 @@ jobs:
         run: cargo publish --manifest-path bindings/rust/Cargo.toml --no-verify
   release-github:
     needs: create-artifacts
+    runs-on: ubuntu-latest
     permissions:
       contents: write
-    uses: phylaxsystems/actions/.github/workflows/release-github.yaml@main
-    secrets:
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-    with:
-      artifact_name: credible-layer-contracts-artifacts
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: credible-layer-contracts-artifacts
+          path: artifacts/
+
+      - name: Create GitHub release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' artifact_files < <(find artifacts -type f -print0)
+          if (( ${#artifact_files[@]} == 0 )); then
+            echo "::error::No release artifacts were downloaded"
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            "${artifact_files[@]}" \
+            --generate-notes \
+            --title "$GITHUB_REF_NAME" \
+            --verify-tag

@@ -182,6 +182,37 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 action_reference,
             )
 
+    def test_github_release_is_local_and_uses_pinned_artifacts(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        release_job = workflow.split("  release-github:\n", 1)[1]
+        action_references = [
+            line.strip()
+            for line in release_job.splitlines()
+            if line.strip().startswith("uses:")
+        ]
+
+        self.assertIn("runs-on: ubuntu-latest", release_job)
+        self.assertIn("contents: write", release_job)
+        self.assertNotIn("id-token: write", release_job)
+        self.assertNotIn("phylaxsystems/actions", release_job)
+        self.assertNotIn("SSH_PRIVATE_KEY", release_job)
+        self.assertNotIn("actions/checkout", release_job)
+        self.assertIn("uses: actions/download-artifact@", release_job)
+        self.assertIn("name: credible-layer-contracts-artifacts", release_job)
+        self.assertIn("gh release create", release_job)
+        self.assertIn('"$GITHUB_REF_NAME"', release_job)
+        self.assertIn("--generate-notes", release_job)
+
+        self.assertTrue(action_references)
+        for action_reference in action_references:
+            self.assertIsNotNone(
+                re.fullmatch(
+                    r"uses: [^@\s]+@[0-9a-f]{40}(?:\s+#\s+\S+)?",
+                    action_reference,
+                ),
+                action_reference,
+            )
+
     def test_cargo_and_npm_packages_share_release_version(self):
         package = json.loads((ROOT / "package.json").read_text())
         with (ROOT / "bindings" / "rust" / "Cargo.toml").open("rb") as manifest:
