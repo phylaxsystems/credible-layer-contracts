@@ -370,7 +370,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
 
     function resetStorage(address assertionAdopter, bytes32 storageKey) external whenNotPaused {
         _projectManagedBy(assertionAdopter, msg.sender);
-        ExecutorEventGuard.consume(ExecutorEventGuard.StoreType.StorageReset);
+        ExecutorEventGuard.consume(ExecutorEventGuard.StoreType.StorageReset, assertionAdopter, storageKey);
         emit StorageReset(assertionAdopter, storageKey, _effectiveBlock());
     }
 
@@ -459,15 +459,16 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         (, uint64 triggerUnits) = validator.validate(artifact.triggerManifest.schemaId, artifact.triggerManifest.data);
         require(triggerUnits != 0, InvalidTriggerUnits());
 
-        Project storage project = _activeProject(projectId);
-        uint64 newUsage = project.usedTriggerUnits + triggerUnits;
-        require(newUsage <= project.triggerLimit, TriggerLimitExceeded());
         require(daVerifiers.isRegistered(daProof.verifier), DAVerifierNotRegistered());
         require(
             daProof.verifier.verifyDA(assertionId, daProof.metadata, daProof.proof), InvalidDAProof(daProof.verifier)
         );
 
-        ExecutorEventGuard.consume(ExecutorEventGuard.StoreType.AssertionLifecycle);
+        Project storage project = _activeProject(projectId);
+        require(
+            uint256(project.usedTriggerUnits) + uint256(triggerUnits) <= project.triggerLimit, TriggerLimitExceeded()
+        );
+        ExecutorEventGuard.consume(ExecutorEventGuard.StoreType.AssertionLifecycle, assertionAdopter, assertionId);
         bytes32 manifestHash = keccak256(artifact.triggerManifest.data);
         assertions[assertionAdopter][assertionId] = AssertionInstallation({
             triggerUnits: triggerUnits,
@@ -476,7 +477,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
             enabled: true
         });
         assertionAdopters[assertionAdopter].assertionCount++;
-        project.usedTriggerUnits = newUsage;
+        project.usedTriggerUnits += triggerUnits;
 
         _emitAssertionAdded(projectId, assertionAdopter, _effectiveBlock(), triggerUnits, artifact, daProof);
     }
@@ -484,7 +485,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     function _removeAssertion(bytes32 projectId, address assertionAdopter, bytes32 assertionId) private {
         AssertionInstallation storage installation = assertions[assertionAdopter][assertionId];
         require(installation.enabled, AssertionDoesNotExist());
-        ExecutorEventGuard.consume(ExecutorEventGuard.StoreType.AssertionLifecycle);
+        ExecutorEventGuard.consume(ExecutorEventGuard.StoreType.AssertionLifecycle, assertionAdopter, assertionId);
 
         installation.enabled = false;
         uint64 deactivationBlock = _effectiveBlock();

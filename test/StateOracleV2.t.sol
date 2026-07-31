@@ -19,6 +19,42 @@ import {OwnableAdopter} from "./utils/Adopter.sol";
 import {DAVerifierMock} from "./utils/DAVerifierMock.sol";
 import {ProxyHelper} from "./utils/ProxyHelper.t.sol";
 
+contract ReentrantDAVerifierMock {
+    StateOracleV2 private immutable ORACLE;
+    address private immutable ASSERTION_ADOPTER;
+    bytes32 private immutable MANIFEST_SCHEMA_ID;
+    IDAVerifier private immutable INNER_DA_VERIFIER;
+    bytes32 private immutable INNER_ASSERTION_ID;
+    bytes private manifestData;
+
+    constructor(
+        StateOracleV2 oracle,
+        address assertionAdopter,
+        bytes32 manifestSchemaId,
+        bytes memory manifestData_,
+        IDAVerifier innerDAVerifier,
+        bytes32 innerAssertionId
+    ) {
+        ORACLE = oracle;
+        ASSERTION_ADOPTER = assertionAdopter;
+        MANIFEST_SCHEMA_ID = manifestSchemaId;
+        manifestData = manifestData_;
+        INNER_DA_VERIFIER = innerDAVerifier;
+        INNER_ASSERTION_ID = innerAssertionId;
+    }
+
+    function verifyDA(bytes32, bytes calldata, bytes calldata) external returns (bool) {
+        StateOracleV2.AssertionArtifact memory artifact = StateOracleV2.AssertionArtifact({
+            deploymentCodeHash: INNER_ASSERTION_ID,
+            triggerManifest: StateOracleV2.TriggerManifest({schemaId: MANIFEST_SCHEMA_ID, data: manifestData})
+        });
+        ORACLE.addAssertion(
+            ASSERTION_ADOPTER, artifact, StateOracleV2.DAProof({verifier: INNER_DA_VERIFIER, metadata: "", proof: ""})
+        );
+        return true;
+    }
+}
+
 abstract contract StateOracleV2TestBase is Test, ProxyHelper {
     address internal constant ORACLE_ADMIN = address(0xA11CE);
     address internal constant PROTOCOL_MANAGER = address(0xB0B);
@@ -945,6 +981,7 @@ contract StateOracleV2TriggerAccountingInvariantTest is StateOracleV2TestBase {
 contract StateOracleV2ExecutorEventGuardTest is StateOracleV2TestBase {
     bytes32 internal constant FIRST_ASSERTION_ID = bytes32(uint256(1));
     bytes32 internal constant SECOND_ASSERTION_ID = bytes32(uint256(2));
+    bytes32 internal constant THIRD_ASSERTION_ID = bytes32(uint256(3));
 
     address internal assertionAdopter;
     uint256 internal firstSetupBlock;
@@ -959,13 +996,16 @@ contract StateOracleV2ExecutorEventGuardTest is StateOracleV2TestBase {
 
     function beforeTestSetup(bytes4 testSelector) public view returns (bytes[] memory calls) {
         if (
-            testSelector == this.test_batchCannotRemoveTwoAssertions.selector
+            testSelector == this.test_batchAllowsRemovingDifferentAssertionsForSameAdopter.selector
                 || testSelector == this.test_separateLifecycleTransactionsInSameBlockSucceed.selector
         ) {
             calls = new bytes[](2);
             calls[0] = abi.encodeCall(this.setupAddFirstAssertion, ());
             calls[1] = abi.encodeCall(this.setupAddSecondAssertion, ());
-        } else if (testSelector == this.test_batchCannotAddAndRemoveAssertions.selector) {
+        } else if (
+            testSelector == this.test_batchAllowsAddingAndRemovingDifferentAssertions.selector
+                || testSelector == this.test_batchRejectsRemoveThenAddForSameAssertion.selector
+        ) {
             calls = new bytes[](1);
             calls[0] = abi.encodeCall(this.setupAddFirstAssertion, ());
         }
@@ -981,27 +1021,11 @@ contract StateOracleV2ExecutorEventGuardTest is StateOracleV2TestBase {
         _addAssertion(assertionAdopter, SECOND_ASSERTION_ID);
     }
 
-    function test_batchCannotAddTwoAssertions() public {
+    function test_batchAllowsAddingDifferentAssertionsForSameAdopter() public {
         bytes[] memory calls = new bytes[](2);
-        calls[0] = _addAssertionCall(FIRST_ASSERTION_ID);
-        calls[1] = _addAssertionCall(SECOND_ASSERTION_ID);
+        calls[0] = _addAssertionCall(assertionAdopter, FIRST_ASSERTION_ID);
+        calls[1] = _addAssertionCall(assertionAdopter, SECOND_ASSERTION_ID);
 
-        vm.expectRevert(_batchGuardRevert(ExecutorEventGuard.StoreType.AssertionLifecycle));
-        vm.prank(PROTOCOL_MANAGER);
-        oracle.batch(calls);
-
-        assertFalse(oracle.hasAssertion(assertionAdopter, FIRST_ASSERTION_ID));
-        assertFalse(oracle.hasAssertion(assertionAdopter, SECOND_ASSERTION_ID));
-        (, uint64 used) = _usage(PROJECT_ID);
-        assertEq(used, 0);
-    }
-
-    function test_batchCannotRemoveTwoAssertions() public {
-        bytes[] memory calls = new bytes[](2);
-        calls[0] = abi.encodeCall(StateOracleV2.removeAssertion, (assertionAdopter, FIRST_ASSERTION_ID));
-        calls[1] = abi.encodeCall(StateOracleV2.removeAssertion, (assertionAdopter, SECOND_ASSERTION_ID));
-
-        vm.expectRevert(_batchGuardRevert(ExecutorEventGuard.StoreType.AssertionLifecycle));
         vm.prank(PROTOCOL_MANAGER);
         oracle.batch(calls);
 
@@ -1011,25 +1035,174 @@ contract StateOracleV2ExecutorEventGuardTest is StateOracleV2TestBase {
         assertEq(used, 2);
     }
 
-    function test_batchCannotAddAndRemoveAssertions() public {
+    function test_batchAllowsRemovingDifferentAssertionsForSameAdopter() public {
         bytes[] memory calls = new bytes[](2);
-        calls[0] = _addAssertionCall(SECOND_ASSERTION_ID);
+        calls[0] = abi.encodeCall(StateOracleV2.removeAssertion, (assertionAdopter, FIRST_ASSERTION_ID));
+        calls[1] = abi.encodeCall(StateOracleV2.removeAssertion, (assertionAdopter, SECOND_ASSERTION_ID));
+
+        vm.prank(PROTOCOL_MANAGER);
+        oracle.batch(calls);
+
+        assertFalse(oracle.hasAssertion(assertionAdopter, FIRST_ASSERTION_ID));
+        assertFalse(oracle.hasAssertion(assertionAdopter, SECOND_ASSERTION_ID));
+        (, uint64 used) = _usage(PROJECT_ID);
+        assertEq(used, 0);
+    }
+
+    function test_batchAllowsAddingAndRemovingDifferentAssertions() public {
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(StateOracleV2.removeAssertion, (assertionAdopter, FIRST_ASSERTION_ID));
+        calls[1] = _addAssertionCall(assertionAdopter, SECOND_ASSERTION_ID);
+
+        vm.prank(PROTOCOL_MANAGER);
+        oracle.batch(calls);
+
+        assertFalse(oracle.hasAssertion(assertionAdopter, FIRST_ASSERTION_ID));
+        assertTrue(oracle.hasAssertion(assertionAdopter, SECOND_ASSERTION_ID));
+        (, uint64 used) = _usage(PROJECT_ID);
+        assertEq(used, 1);
+    }
+
+    function test_batchAllowsSameAssertionForDifferentAdopters() public {
+        address secondAdopter = _assignAdopter(PROJECT_ID);
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _addAssertionCall(assertionAdopter, FIRST_ASSERTION_ID);
+        calls[1] = _addAssertionCall(secondAdopter, FIRST_ASSERTION_ID);
+
+        vm.prank(PROTOCOL_MANAGER);
+        oracle.batch(calls);
+
+        assertTrue(oracle.hasAssertion(assertionAdopter, FIRST_ASSERTION_ID));
+        assertTrue(oracle.hasAssertion(secondAdopter, FIRST_ASSERTION_ID));
+        (,, uint32 firstCount) = oracle.assertionAdopters(assertionAdopter);
+        (,, uint32 secondCount) = oracle.assertionAdopters(secondAdopter);
+        (, uint64 used) = _usage(PROJECT_ID);
+        assertEq(firstCount, 1);
+        assertEq(secondCount, 1);
+        assertEq(used, 2);
+    }
+
+    function test_batchRejectsAddThenRemoveForSameAssertion() public {
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _addAssertionCall(assertionAdopter, FIRST_ASSERTION_ID);
         calls[1] = abi.encodeCall(StateOracleV2.removeAssertion, (assertionAdopter, FIRST_ASSERTION_ID));
 
         vm.expectRevert(_batchGuardRevert(ExecutorEventGuard.StoreType.AssertionLifecycle));
         vm.prank(PROTOCOL_MANAGER);
         oracle.batch(calls);
 
+        assertFalse(oracle.hasAssertion(assertionAdopter, FIRST_ASSERTION_ID));
+        (, uint64 used) = _usage(PROJECT_ID);
+        assertEq(used, 0);
+    }
+
+    function test_batchRejectsRemoveThenAddForSameAssertion() public {
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(StateOracleV2.removeAssertion, (assertionAdopter, FIRST_ASSERTION_ID));
+        calls[1] = _addAssertionCall(assertionAdopter, FIRST_ASSERTION_ID);
+
+        vm.expectRevert(_batchGuardRevert(ExecutorEventGuard.StoreType.AssertionLifecycle));
+        vm.prank(PROTOCOL_MANAGER);
+        oracle.batch(calls);
+
         assertTrue(oracle.hasAssertion(assertionAdopter, FIRST_ASSERTION_ID));
-        assertFalse(oracle.hasAssertion(assertionAdopter, SECOND_ASSERTION_ID));
         (, uint64 used) = _usage(PROJECT_ID);
         assertEq(used, 1);
     }
 
-    function test_batchCannotResetTwoStorageKeys() public {
+    function test_batchAccumulatesUsageAcrossThreeAdds() public {
+        bytes[] memory calls = new bytes[](3);
+        calls[0] = _addAssertionCall(assertionAdopter, FIRST_ASSERTION_ID);
+        calls[1] = _addAssertionCall(assertionAdopter, SECOND_ASSERTION_ID);
+        calls[2] = _addAssertionCall(assertionAdopter, THIRD_ASSERTION_ID);
+
+        vm.prank(PROTOCOL_MANAGER);
+        oracle.batch(calls);
+
+        (,, uint32 count) = oracle.assertionAdopters(assertionAdopter);
+        (, uint64 used) = _usage(PROJECT_ID);
+        assertEq(count, 3);
+        assertEq(used, 3);
+    }
+
+    function test_nonViewReentrantDAVerifierCannotDoubleSpendTriggerLimit() public {
+        bytes32 projectId = keccak256("reentrant verifier project");
+        address reentrantAdopter = address(new OwnableAdopter(ADOPTER_ADMIN));
+        StateOracleV2.AssertionArtifact memory innerArtifact = _artifact(SECOND_ASSERTION_ID);
+        ReentrantDAVerifierMock reentrantVerifier = new ReentrantDAVerifierMock(
+            oracle,
+            reentrantAdopter,
+            manifestValidator.SCHEMA_ID(),
+            innerArtifact.triggerManifest.data,
+            daVerifier,
+            SECOND_ASSERTION_ID
+        );
+
+        vm.prank(ORACLE_ADMIN);
+        oracle.addDAVerifier(IDAVerifier(address(reentrantVerifier)));
+        _createProject(projectId, address(reentrantVerifier));
+        _setLimit(projectId, 1);
+        vm.prank(ADOPTER_ADMIN);
+        oracle.registerAssertionAdopter(reentrantAdopter, projectId, adminVerifier, "");
+        vm.prank(address(reentrantVerifier));
+        oracle.acceptAssertionAdopter(reentrantAdopter);
+
+        StateOracleV2.AssertionArtifact memory outerArtifact = _artifact(FIRST_ASSERTION_ID);
+        StateOracleV2.DAProof memory outerProof =
+            StateOracleV2.DAProof({verifier: IDAVerifier(address(reentrantVerifier)), metadata: "", proof: ""});
+        bytes memory callData =
+            abi.encodeCall(StateOracleV2.addAssertion, (reentrantAdopter, outerArtifact, outerProof));
+        vm.prank(address(reentrantVerifier));
+        (bool success,) = address(oracle).call{gas: 1_000_000}(callData);
+        assertFalse(success);
+
+        assertFalse(oracle.hasAssertion(reentrantAdopter, FIRST_ASSERTION_ID));
+        assertFalse(oracle.hasAssertion(reentrantAdopter, SECOND_ASSERTION_ID));
+        (,, uint32 count) = oracle.assertionAdopters(reentrantAdopter);
+        (, uint64 used) = _usage(projectId);
+        assertEq(count, 0);
+        assertEq(used, 0);
+    }
+
+    function test_batchAllowsDifferentStorageKeysForSameAdopter() public {
+        bytes32 firstKey = bytes32(uint256(1));
+        bytes32 secondKey = bytes32(uint256(2));
         bytes[] memory calls = new bytes[](2);
-        calls[0] = abi.encodeCall(StateOracleV2.resetStorage, (assertionAdopter, bytes32(uint256(1))));
-        calls[1] = abi.encodeCall(StateOracleV2.resetStorage, (assertionAdopter, bytes32(uint256(2))));
+        calls[0] = abi.encodeCall(StateOracleV2.resetStorage, (assertionAdopter, firstKey));
+        calls[1] = abi.encodeCall(StateOracleV2.resetStorage, (assertionAdopter, secondKey));
+
+        vm.recordLogs();
+        vm.prank(PROTOCOL_MANAGER);
+        oracle.batch(calls);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 2);
+        assertEq(logs[0].topics[2], firstKey);
+        assertEq(logs[1].topics[2], secondKey);
+    }
+
+    function test_batchAllowsSameStorageKeyForDifferentAdopters() public {
+        address secondAdopter = _assignAdopter(PROJECT_ID);
+        bytes32 storageKey = bytes32(uint256(1));
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(StateOracleV2.resetStorage, (assertionAdopter, storageKey));
+        calls[1] = abi.encodeCall(StateOracleV2.resetStorage, (secondAdopter, storageKey));
+
+        vm.recordLogs();
+        vm.prank(PROTOCOL_MANAGER);
+        oracle.batch(calls);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 2);
+        assertEq(address(uint160(uint256(logs[0].topics[1]))), assertionAdopter);
+        assertEq(address(uint160(uint256(logs[1].topics[1]))), secondAdopter);
+    }
+
+    function test_batchRejectsDuplicateStorageReset() public {
+        bytes32 storageKey = bytes32(uint256(1));
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(StateOracleV2.resetStorage, (assertionAdopter, storageKey));
+        calls[1] = abi.encodeCall(StateOracleV2.resetStorage, (assertionAdopter, storageKey));
 
         vm.expectRevert(_batchGuardRevert(ExecutorEventGuard.StoreType.StorageReset));
         vm.prank(PROTOCOL_MANAGER);
@@ -1038,7 +1211,7 @@ contract StateOracleV2ExecutorEventGuardTest is StateOracleV2TestBase {
 
     function test_batchAllowsOneLifecycleEventAndOneStorageReset() public {
         bytes[] memory calls = new bytes[](2);
-        calls[0] = _addAssertionCall(FIRST_ASSERTION_ID);
+        calls[0] = _addAssertionCall(assertionAdopter, FIRST_ASSERTION_ID);
         calls[1] = abi.encodeCall(StateOracleV2.resetStorage, (assertionAdopter, bytes32(uint256(1))));
 
         vm.prank(PROTOCOL_MANAGER);
@@ -1057,14 +1230,10 @@ contract StateOracleV2ExecutorEventGuardTest is StateOracleV2TestBase {
         assertEq(used, 2);
     }
 
-    function _addAssertionCall(bytes32 assertionId) private view returns (bytes memory) {
+    function _addAssertionCall(address adopter, bytes32 assertionId) private view returns (bytes memory) {
         return abi.encodeCall(
             StateOracleV2.addAssertion,
-            (
-                assertionAdopter,
-                _artifact(assertionId),
-                StateOracleV2.DAProof({verifier: daVerifier, metadata: "", proof: ""})
-            )
+            (adopter, _artifact(assertionId), StateOracleV2.DAProof({verifier: daVerifier, metadata: "", proof: ""}))
         );
     }
 
