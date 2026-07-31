@@ -1,4 +1,5 @@
 import json
+import re
 import tomllib
 import unittest
 from pathlib import Path
@@ -81,6 +82,27 @@ class ReleaseWorkflowTest(unittest.TestCase):
             "curl",
         ):
             self.assertNotIn(verification_step, release_job)
+
+    def test_cargo_release_actions_are_pinned_to_commit_shas(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        cargo_jobs = workflow.split("  release-cargo-verify:\n", 1)[1].split(
+            "  release-github:\n", 1
+        )[0]
+        action_references = [
+            line.strip()
+            for line in cargo_jobs.splitlines()
+            if line.strip().startswith("uses:")
+        ]
+
+        self.assertTrue(action_references)
+        for action_reference in action_references:
+            self.assertIsNotNone(
+                re.fullmatch(
+                    r"uses: [^@\s]+@[0-9a-f]{40}(?:\s+#\s+\S+)?",
+                    action_reference,
+                ),
+                action_reference,
+            )
 
     def test_cargo_and_npm_packages_share_release_version(self):
         package = json.loads((ROOT / "package.json").read_text())
