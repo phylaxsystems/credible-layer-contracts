@@ -26,34 +26,79 @@ jobs:
         with:
           name: credible-layer-contracts-artifacts
           path: artifacts/
-  release-npm:
+  release-npm-verify:
     needs: create-artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.18.1
+
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: credible-layer-contracts-artifacts
+          path: artifacts/
+
+      - name: Build npm package
+        id: package
+        run: |
+          set -euo pipefail
+          npm_version=$(jq -r '.version' package.json)
+          if [[ "$npm_version" != "$GITHUB_REF_NAME" ]]; then
+            echo "::error::npm version ${npm_version} does not match tag ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          package_file=$(npm pack --ignore-scripts=true --json | jq -r '.[0].filename')
+          if [[ ! -f "$package_file" ]]; then
+            echo "::error::npm pack did not create ${package_file}"
+            exit 1
+          fi
+          echo "package_path=${package_file}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload verified npm package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: credible-layer-contracts-npm-package
+          path: ${{ steps.package.outputs.package_path }}
+          if-no-files-found: error
+          retention-days: 1
+
+  release-npm:
+    needs: release-npm-verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 24.18.1
           registry-url: https://registry.npmjs.org
 
-      # npm >= 11.5.1 is required for OIDC trusted publishing.
-      - name: Update npm
-        run: npm install -g npm@latest
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
+      - name: Download verified npm package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: credible-layer-contracts-artifacts
-          path: artifacts/
+          name: credible-layer-contracts-npm-package
+          path: npm-package/
 
       - name: Publish to npm
-        run: npm publish --access public --ignore-scripts=true
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(npm-package/*.tgz)
+          if [[ ${#packages[@]} -ne 1 ]]; then
+            echo "::error::Expected exactly one npm package, found ${#packages[@]}"
+            exit 1
+          fi
+          npm publish "${packages[0]}" --access public --ignore-scripts=true
   release-cargo-verify:
     needs: create-artifacts
     runs-on: ubuntu-latest

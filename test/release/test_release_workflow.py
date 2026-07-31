@@ -9,25 +9,64 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ReleaseWorkflowTest(unittest.TestCase):
-    def test_npm_publish_runs_inline_in_the_trusted_workflow(self):
+    def test_npm_package_verification_has_no_oidc_permission(self):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
-        release_job = workflow.split("  release-npm:\n", 1)[1].split(
-            "  release-cargo:\n", 1
+        verify_job = workflow.split("  release-npm-verify:\n", 1)[1].split(
+            "  release-npm:\n", 1
         )[0]
 
+        self.assertIn("needs: create-artifacts", verify_job)
+        self.assertIn("contents: read", verify_job)
+        self.assertNotIn("id-token: write", verify_job)
+        self.assertIn("uses: actions/checkout@", verify_job)
+        self.assertIn("uses: actions/setup-node@", verify_job)
+        self.assertIn("uses: actions/download-artifact@", verify_job)
+        self.assertIn("name: credible-layer-contracts-artifacts", verify_job)
+        self.assertIn("npm pack --ignore-scripts=true --json", verify_job)
+        self.assertIn("uses: actions/upload-artifact@", verify_job)
+        self.assertIn("name: credible-layer-contracts-npm-package", verify_job)
+
+    def test_npm_publish_job_only_publishes_verified_package(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        release_job = workflow.split("  release-npm:\n", 1)[1].split(
+            "  release-cargo-verify:\n", 1
+        )[0]
+
+        self.assertIn("needs: release-npm-verify", release_job)
         self.assertIn("id-token: write", release_job)
-        self.assertIn("runs-on: ubuntu-latest", release_job)
-        self.assertIn("uses: actions/checkout@", release_job)
+        self.assertNotIn("actions/checkout", release_job)
         self.assertIn("uses: actions/setup-node@", release_job)
+        self.assertIn("node-version: 24.18.1", release_job)
         self.assertIn("registry-url: https://registry.npmjs.org", release_job)
-        self.assertIn("run: npm install -g npm@latest", release_job)
         self.assertIn("uses: actions/download-artifact@", release_job)
-        self.assertIn("name: credible-layer-contracts-artifacts", release_job)
-        self.assertIn("path: artifacts/", release_job)
+        self.assertIn("name: credible-layer-contracts-npm-package", release_job)
         self.assertIn(
-            "run: npm publish --access public --ignore-scripts=true", release_job
+            'npm publish "${packages[0]}" --access public --ignore-scripts=true',
+            release_job,
         )
-        self.assertNotIn("phylaxsystems/actions/release-npm", release_job)
+        self.assertNotIn("npm install", release_job)
+        self.assertNotIn("npm pack --", release_job)
+
+    def test_npm_release_actions_are_pinned_to_commit_shas(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        npm_jobs = workflow.split("  release-npm-verify:\n", 1)[1].split(
+            "  release-cargo-verify:\n", 1
+        )[0]
+        action_references = [
+            line.strip()
+            for line in npm_jobs.splitlines()
+            if line.strip().startswith("uses:")
+        ]
+
+        self.assertTrue(action_references)
+        for action_reference in action_references:
+            self.assertIsNotNone(
+                re.fullmatch(
+                    r"uses: [^@\s]+@[0-9a-f]{40}(?:\s+#\s+\S+)?",
+                    action_reference,
+                ),
+                action_reference,
+            )
 
     def test_cargo_verification_has_no_oidc_permission(self):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
