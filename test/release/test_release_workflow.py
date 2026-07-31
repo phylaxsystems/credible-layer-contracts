@@ -24,6 +24,30 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertLess(generation_index, verification_index)
         self.assertLess(verification_index, upload_index)
 
+    def test_artifact_generation_inputs_are_immutable(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        artifact_job = workflow.split("  create-artifacts:\n", 1)[1].split(
+            "  release-npm-verify:\n", 1
+        )[0]
+        action_references = [
+            line.strip()
+            for line in artifact_job.splitlines()
+            if line.strip().startswith("uses:")
+        ]
+
+        self.assertTrue(action_references)
+        for action_reference in action_references:
+            self.assertIsNotNone(
+                re.fullmatch(
+                    r"uses: [^@\s]+@[0-9a-f]{40}(?:\s+#\s+\S+)?",
+                    action_reference,
+                ),
+                action_reference,
+            )
+        self.assertRegex(artifact_job, r"version: v\d+\.\d+\.\d+")
+        self.assertNotIn("version: nightly", artifact_job)
+        self.assertNotIn("version: stable", artifact_job)
+
     def test_npm_package_verification_has_no_oidc_permission(self):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
         verify_job = workflow.split("  release-npm-verify:\n", 1)[1].split(
