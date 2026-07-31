@@ -18,6 +18,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     using AdminVerifierRegistry for mapping(IAdminVerifier verifier => bool registered);
     using DAVerifierRegistry for mapping(IDAVerifier verifier => bool registered);
 
+    uint256 private constant MAX_ADMIN_DATA_LENGTH = 4_096;
     uint256 public immutable ASSERTION_TIMELOCK_BLOCKS;
 
     enum ProjectStatus {
@@ -62,8 +63,16 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     error ProjectRetirementAlreadyRequested();
     error ProjectRetirementNotRequested();
     error TriggerLimitUnchanged();
+    error UnauthorizedRegistrant();
+    error InvalidAssertionAdopter();
+    error AssertionAdopterAlreadyAssigned();
+    error AssertionAdopterNotAssigned();
+    error PendingAssignmentExists();
+    error NoPendingAssignment();
+    error AssertionAdopterHasAssertions();
     error TriggerManifestValidatorUnchanged();
     error InvalidTriggerManifestValidator();
+    error DataTooLarge();
 
     event ProjectCreated(bytes32 indexed projectId, address indexed protocolManager);
     event ProtocolManagerTransferRequested(
@@ -74,6 +83,13 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     event ProjectRetirementRequested(bytes32 indexed projectId, address indexed protocolManager);
     event ProjectRetirementCancelled(bytes32 indexed projectId, address indexed protocolManager);
     event ProjectRetired(bytes32 indexed projectId, uint64 retiredAtBlock);
+    event AssertionAdopterRegistrationRequested(
+        address indexed assertionAdopter, bytes32 indexed projectId, IAdminVerifier indexed adminVerifier
+    );
+    event AssertionAdopterRegistrationCancelled(address indexed assertionAdopter, bytes32 indexed projectId);
+    event AssertionAdopterRegistrationRejected(address indexed assertionAdopter, bytes32 indexed projectId);
+    event AssertionAdopterAdded(address indexed assertionAdopter, bytes32 indexed projectId);
+    event AssertionAdopterDetached(address indexed assertionAdopter, bytes32 indexed projectId);
     event TriggerManifestValidatorUpdated(
         bytes32 indexed schemaId, ITriggerManifestValidator oldValidator, ITriggerManifestValidator newValidator
     );
@@ -209,6 +225,79 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         project.status = ProjectStatus.Retired;
         project.retiredAtBlock = retiredAtBlock;
         emit ProjectRetired(projectId, retiredAtBlock);
+    }
+
+    function registerAssertionAdopter(
+        address assertionAdopter,
+        bytes32 projectId,
+        IAdminVerifier adminVerifier,
+        bytes calldata data
+    ) external whenNotPaused {
+        require(assertionAdopter != address(0), InvalidAssertionAdopter());
+        require(data.length <= MAX_ADMIN_DATA_LENGTH, DataTooLarge());
+        _activeProject(projectId);
+        AssertionAdopter storage assignment = assertionAdopters[assertionAdopter];
+        require(assignment.projectId == bytes32(0), AssertionAdopterAlreadyAssigned());
+        require(assignment.pendingProjectId == bytes32(0), PendingAssignmentExists());
+        require(adminVerifiers.isRegistered(adminVerifier), AdminVerifierRegistry.AdminVerifierNotRegistered());
+        require(adminVerifier.verifyAdmin(assertionAdopter, msg.sender, data), UnauthorizedRegistrant());
+        assignment.pendingProjectId = projectId;
+        emit AssertionAdopterRegistrationRequested(assertionAdopter, projectId, adminVerifier);
+    }
+
+    function cancelAssertionAdopterRegistration(
+        address assertionAdopter,
+        IAdminVerifier adminVerifier,
+        bytes calldata data
+    ) external {
+        require(data.length <= MAX_ADMIN_DATA_LENGTH, DataTooLarge());
+        AssertionAdopter storage assignment = assertionAdopters[assertionAdopter];
+        bytes32 projectId = assignment.pendingProjectId;
+        require(projectId != bytes32(0), NoPendingAssignment());
+        require(adminVerifiers.isRegistered(adminVerifier), AdminVerifierRegistry.AdminVerifierNotRegistered());
+        require(adminVerifier.verifyAdmin(assertionAdopter, msg.sender, data), UnauthorizedRegistrant());
+        assignment.pendingProjectId = bytes32(0);
+        emit AssertionAdopterRegistrationCancelled(assertionAdopter, projectId);
+    }
+
+    function rejectAssertionAdopterRegistration(address assertionAdopter) external {
+        AssertionAdopter storage assignment = assertionAdopters[assertionAdopter];
+        bytes32 projectId = assignment.pendingProjectId;
+        require(projectId != bytes32(0), NoPendingAssignment());
+        Project storage project = projects[projectId];
+        require(
+            project.status == ProjectStatus.Retired || msg.sender == project.protocolManager,
+            UnauthorizedProtocolManager()
+        );
+        assignment.pendingProjectId = bytes32(0);
+        emit AssertionAdopterRegistrationRejected(assertionAdopter, projectId);
+    }
+
+    function acceptAssertionAdopter(address assertionAdopter) external whenNotPaused {
+        AssertionAdopter storage assignment = assertionAdopters[assertionAdopter];
+        bytes32 projectId = assignment.pendingProjectId;
+        require(projectId != bytes32(0), NoPendingAssignment());
+        Project storage project = _activeProject(projectId);
+        require(msg.sender == project.protocolManager, UnauthorizedProtocolManager());
+        require(assignment.projectId == bytes32(0), AssertionAdopterAlreadyAssigned());
+        assignment.projectId = projectId;
+        assignment.pendingProjectId = bytes32(0);
+        emit AssertionAdopterAdded(assertionAdopter, projectId);
+    }
+
+    function detachAssertionAdopter(address assertionAdopter) external {
+        AssertionAdopter storage assignment = assertionAdopters[assertionAdopter];
+        bytes32 projectId = assignment.projectId;
+        require(projectId != bytes32(0), AssertionAdopterNotAssigned());
+        Project storage project = projects[projectId];
+        require(
+            project.status == ProjectStatus.Retired
+                || (project.status == ProjectStatus.Active && msg.sender == project.protocolManager),
+            UnauthorizedProtocolManager()
+        );
+        require(assignment.assertionCount == 0, AssertionAdopterHasAssertions());
+        assignment.projectId = bytes32(0);
+        emit AssertionAdopterDetached(assertionAdopter, projectId);
     }
 
     function pause() external onlyGovernance {
