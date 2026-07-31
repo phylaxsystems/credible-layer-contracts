@@ -11,6 +11,12 @@ evm_version = "cancun"
 [lint]
 exclude_lints = ["mixed-case-function", "mixed-case-variable"]
 
+[invariant]
+runs = 256
+depth = 128
+fail_on_revert = true
+show_metrics = false
+
 
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
