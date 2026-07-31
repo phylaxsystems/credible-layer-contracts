@@ -36,6 +36,15 @@ jobs:
           cargo test --manifest-path bindings/rust/Cargo.toml
           cargo publish --manifest-path bindings/rust/Cargo.toml --dry-run
 
+  rust-bindings-msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust 1.85
+        run: rustup toolchain install 1.85.0 --profile minimal --no-self-update
+      - name: Test Rust bindings on the declared MSRV
+        run: cargo +1.85.0 test --manifest-path bindings/rust/Cargo.toml --all-targets
+
   solidity-base:
     uses: phylaxsystems/actions/.github/workflows/solidity-base.yaml@main
     with:

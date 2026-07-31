@@ -76,6 +76,23 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 (ROOT / license_name).read_text().splitlines(),
             )
 
+    def test_ci_enforces_cargo_msrv(self):
+        workflow = (ROOT / ".github" / "workflows" / "solidity-test.yml").read_text()
+        msrv_job = workflow.split("  rust-bindings-msrv:\n", 1)[1].split(
+            "  solidity-base:\n", 1
+        )[0]
+        with (ROOT / "bindings" / "rust" / "Cargo.toml").open("rb") as manifest:
+            rust_version = tomllib.load(manifest)["package"]["rust-version"]
+        rust_toolchain = (
+            f"{rust_version}.0" if rust_version.count(".") == 1 else rust_version
+        )
+
+        self.assertIn(f"rustup toolchain install {rust_toolchain}", msrv_job)
+        self.assertIn(
+            f"cargo +{rust_toolchain} test --manifest-path bindings/rust/Cargo.toml",
+            msrv_job,
+        )
+
     def test_artifact_generation_updates_the_committed_rust_abi(self):
         script = (ROOT / "shell" / "create_artifacts.sh").read_text()
 
