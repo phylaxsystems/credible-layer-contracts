@@ -28,31 +28,59 @@ class ReleaseWorkflowTest(unittest.TestCase):
         )
         self.assertNotIn("phylaxsystems/actions/release-npm", release_job)
 
-    def test_cargo_publish_runs_inline_with_trusted_publishing(self):
+    def test_cargo_verification_has_no_oidc_permission(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        verify_job = workflow.split("  release-cargo-verify:\n", 1)[1].split(
+            "  release-cargo:\n", 1
+        )[0]
+
+        self.assertIn("needs: create-artifacts", verify_job)
+        self.assertIn("contents: read", verify_job)
+        self.assertNotIn("id-token: write", verify_job)
+        self.assertIn("uses: actions/checkout@", verify_job)
+        self.assertIn("uses: actions/download-artifact@", verify_job)
+        self.assertIn("name: credible-layer-contracts-artifacts", verify_job)
+        self.assertIn("cmp -s artifacts/StateOracle.json", verify_job)
+        self.assertIn(
+            "cargo publish --manifest-path bindings/rust/Cargo.toml --dry-run",
+            verify_job,
+        )
+        self.assertIn("id: published", verify_job)
+        self.assertIn("exists: ${{ steps.published.outputs.exists }}", verify_job)
+        self.assertNotIn("rust-lang/crates-io-auth-action", verify_job)
+
+    def test_cargo_publish_job_is_minimal(self):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
         release_job = workflow.split("  release-cargo:\n", 1)[1].split(
             "  release-github:\n", 1
         )[0]
 
-        self.assertIn("needs: create-artifacts", release_job)
+        self.assertIn("needs: release-cargo-verify", release_job)
+        self.assertIn(
+            "if: needs.release-cargo-verify.outputs.exists != 'true'", release_job
+        )
         self.assertIn("id-token: write", release_job)
         self.assertIn("uses: actions/checkout@", release_job)
-        self.assertIn("uses: actions/download-artifact@", release_job)
-        self.assertIn("name: credible-layer-contracts-artifacts", release_job)
-        self.assertIn("cmp -s artifacts/StateOracle.json", release_job)
-        self.assertIn(
-            "cargo publish --manifest-path bindings/rust/Cargo.toml --dry-run",
-            release_job,
-        )
-        self.assertIn("uses: rust-lang/crates-io-auth-action@v1", release_job)
+        self.assertIn("uses: rust-lang/crates-io-auth-action@", release_job)
         self.assertIn(
             "CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}",
             release_job,
         )
         self.assertIn(
-            "run: cargo publish --manifest-path bindings/rust/Cargo.toml",
+            "run: cargo publish --manifest-path bindings/rust/Cargo.toml --no-verify",
             release_job,
         )
+        for verification_step in (
+            "rustup toolchain install",
+            "cargo fmt",
+            "cargo clippy",
+            "cargo test",
+            "--dry-run",
+            "actions/download-artifact",
+            "cmp -s",
+            "curl",
+        ):
+            self.assertNotIn(verification_step, release_job)
 
     def test_cargo_and_npm_packages_share_release_version(self):
         package = json.loads((ROOT / "package.json").read_text())
