@@ -195,3 +195,34 @@ Account: (0x8d63e0FE87CA36E06a076584fCA651A684D4c97d)
 
 When broadcasting `script/DeployCore.s.sol ` with the above key, the contracts will always be deployed
 at the same address. Neither the initCode of the contracts nor the nonce influence the address generation.
+
+## Compatibility Checks
+
+Two snapshots guard the surfaces that break consumers silently. Both run on every pull request and
+are reproducible locally.
+
+| Check | Snapshot | Verify | Refresh |
+| --- | --- | --- | --- |
+| Published ABI | `.abi/` | `make check-abi` | `make update-abi` |
+| ABI snapshot is current | `.abi/` | `make update-abi` then `git status .abi/` | `make update-abi` |
+| Storage layout | `.storage-layout` | `make check-storage-layout` | `make update-storage-layout` |
+
+The ABI snapshot covers the contracts published to npm by `shell/create_artifacts.sh`, plus
+`AdminVerifierWhitelist`, whose signatures the dapp seed script calls by literal string. Entries are
+keyed by function selector and event topic0, so reordering by the toolchain never causes a failure.
+A removed entry, a changed parameter or return type, a changed `indexed` layout, or tightened state
+mutability fails the check; new functions and events are reported as additive rather than breaking.
+
+Every change to the fingerprint has to be committed, additive ones included: CI regenerates the
+snapshot and compares it against the tree, so a stale `.abi/` fails the build even when the
+compatibility check itself only warned. Run `make update-abi` and commit the result.
+
+`make` reports any failed recipe as `Error 2`, so a purely additive change shows `Error 2` locally.
+The compatibility check treats that case as a warning and lets the build pass; the snapshot-currency
+step still requires the refresh. The script's own exit codes are `0` unchanged, `1` additive,
+`2` breaking, `3` could not run.
+
+One change is invisible to this check by construction: swapping two parameters of the same type, such
+as the two `address` arguments of `addToWhitelist(address,address)`, leaves the canonical signature
+and therefore the selector untouched. No selector-based comparison can detect it, so review argument
+order by hand.

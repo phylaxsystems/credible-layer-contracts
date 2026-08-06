@@ -1,0 +1,16 @@
+{
+  "contract": "IDAVerifier",
+  "errors": {
+    "0x09bde339": {
+      "signature": "InvalidProof()"
+    }
+  },
+  "events": {},
+  "functions": {
+    "0x5fafae84": {
+      "outputs": "bool",
+      "signature": "verifyDA(bytes32,bytes,bytes)",
+      "stateMutability": "view"
+    }
+  }
+}

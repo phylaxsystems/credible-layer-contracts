@@ -1,0 +1,12 @@
+{
+  "contract": "IBatch",
+  "errors": {},
+  "events": {},
+  "functions": {
+    "0x1e897afb": {
+      "outputs": "",
+      "signature": "batch(bytes[])",
+      "stateMutability": "nonpayable"
+    }
+  }
+}

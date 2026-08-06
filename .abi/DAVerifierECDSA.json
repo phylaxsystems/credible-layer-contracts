@@ -1,0 +1,21 @@
+{
+  "contract": "DAVerifierECDSA",
+  "errors": {
+    "0x09bde339": {
+      "signature": "InvalidProof()"
+    }
+  },
+  "events": {},
+  "functions": {
+    "0x5f7e4ca7": {
+      "outputs": "address",
+      "signature": "DA_PROVER()",
+      "stateMutability": "view"
+    },
+    "0x5fafae84": {
+      "outputs": "bool",
+      "signature": "verifyDA(bytes32,bytes,bytes)",
+      "stateMutability": "view"
+    }
+  }
+}

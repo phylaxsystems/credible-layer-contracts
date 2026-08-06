@@ -1,0 +1,12 @@
+{
+  "contract": "AdminVerifierOwner",
+  "errors": {},
+  "events": {},
+  "functions": {
+    "0xd224a4f9": {
+      "outputs": "bool",
+      "signature": "verifyAdmin(address,address,bytes)",
+      "stateMutability": "view"
+    }
+  }
+}

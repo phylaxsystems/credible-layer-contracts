@@ -17,3 +17,67 @@ jobs:
     uses: phylaxsystems/actions/.github/workflows/solidity-base.yaml@main
     with:
       gas-diff-tolerance: 25
+
+  contract-compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.4.2
+      - name: Build contracts
+        id: build
+        run: forge build
+
+      # Both scripts are invoked directly rather than through make, because make
+      # reports every failed recipe as exit 2 and that erases the severity the
+      # scripts encode in their own exit codes.
+      - name: Check ABI compatibility
+        run: |
+          set +e
+          bash shell/check_abi.sh
+          status=$?
+          set -e
+          case $status in
+            0) ;;
+            1) echo "::warning title=ABI snapshot is stale::The ABI changed additively. Run 'make update-abi' and commit .abi/." ;;
+            2) echo "::error title=ABI compatibility break::A published function selector or event topic changed. Refresh the snapshot with 'make update-abi' only if the break is intended."
+               exit 1 ;;
+            *) echo "::error title=ABI check failed to run::shell/check_abi.sh could not inspect the contracts."
+               exit 1 ;;
+          esac
+
+      # An additive change passes the check above, so without this the snapshot
+      # can drift and a later removal of the drifted entry goes undiagnosed.
+      - name: Check ABI snapshot is current
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          make update-abi
+          # git status rather than git diff, so a snapshot for a newly scoped
+          # contract is caught too: git diff cannot see an untracked file.
+          if [ -n "$(git status --porcelain .abi/)" ]; then
+            git status --porcelain .abi/
+            git diff -- .abi/
+            echo "::error title=ABI snapshot is out of date::Run 'make update-abi' and commit .abi/."
+            exit 1
+          fi
+
+      - name: Check storage layout
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          set +e
+          bash shell/check_storage_layout.sh
+          status=$?
+          set -e
+          case $status in
+            0) ;;
+            1) echo "::error title=Storage layout snapshot is stale::The layout changed without a collision. Run 'make update-storage-layout' and commit .storage-layout."
+               exit 1 ;;
+            2) echo "::error title=Storage layout collision::An existing variable changed slot, offset or type. This breaks deployed proxies."
+               exit 1 ;;
+            *) echo "::error title=Storage layout check failed to run::shell/check_storage_layout.sh could not inspect the contract."
+               exit 1 ;;
+          esac

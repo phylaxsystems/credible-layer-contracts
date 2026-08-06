@@ -1,0 +1,24 @@
+{
+  "contract": "AdminVerifierRegistry",
+  "errors": {
+    "0xbc10a2e7": {
+      "signature": "AdminVerifierNotRegistered()"
+    },
+    "0xf9619cf3": {
+      "signature": "AdminVerifierAlreadyRegistered()"
+    }
+  },
+  "events": {
+    "0x3ec742eae85905d3e5f7da282586c5c1e3f1bc71f0be7ce88e23536b58d47f9e": {
+      "anonymous": false,
+      "indexed": "0",
+      "signature": "AdminVerifierAdded(address)"
+    },
+    "0xb1733e4bfbc9b73e39a57121b7f8504625b325d639dc5ba18c9d1c6dd66e51a3": {
+      "anonymous": false,
+      "indexed": "0",
+      "signature": "AdminVerifierRemoved(address)"
+    }
+  },
+  "functions": {}
+}
