@@ -21,9 +21,12 @@ jobs:
   contract-compatibility:
     runs-on: ubuntu-latest
     steps:
+      # The ABI check builds the base revision in a second worktree, so it needs
+      # the history rather than just the tip.
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
@@ -32,38 +35,70 @@ jobs:
         id: build
         run: forge build
 
+      # The ABI the change has to stay compatible with: for a pull request the
+      # commit it branched from, for a push to main the tip before the push.
+      #
+      # Never fall back to origin/main on a push - on main that IS the commit
+      # under test, so the comparison would be HEAD against HEAD and the job
+      # would report a green check having verified nothing.
+      - name: Resolve base revision
+        id: base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          case "$EVENT_NAME" in
+            pull_request)
+              base="$PR_BASE_SHA"
+              ;;
+            push)
+              # A branch's first push reports an all-zero "before", and a
+              # force-pushed or garbage-collected predecessor can be gone.
+              # HEAD^ is the same comparison for a normal fast-forward push.
+              base="$PUSH_BEFORE_SHA"
+              if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+                echo "Push base '${base}' does not resolve; using HEAD^."
+                base="HEAD^"
+              fi
+              ;;
+            *)
+              base="origin/main"
+              ;;
+          esac
+
+          if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            echo "::error::Base revision '${base}' does not resolve, so there is nothing to compare against. Refusing to report a pass."
+            exit 1
+          fi
+
+          if [ "$(git rev-parse "${base}^{commit}")" = "$(git rev-parse 'HEAD^{commit}')" ]; then
+            echo "::error::Base resolved to HEAD, so the comparison would verify nothing. Refusing to report a pass."
+            exit 1
+          fi
+
+          echo "Comparing against ${base} ($(git rev-parse "${base}^{commit}"))."
+          echo "ref=${base}" >> "$GITHUB_OUTPUT"
+
       # Both scripts are invoked directly rather than through make, because make
       # reports every failed recipe as exit 2 and that erases the severity the
       # scripts encode in their own exit codes.
       - name: Check ABI compatibility
+        env:
+          BASE_REF: ${{ steps.base.outputs.ref }}
         run: |
           set +e
-          bash shell/check_abi.sh
+          bash shell/check_abi.sh "$BASE_REF"
           status=$?
           set -e
           case $status in
             0) ;;
-            1) echo "::warning title=ABI snapshot is stale::The ABI changed additively. Run 'make update-abi' and commit .abi/." ;;
-            2) echo "::error title=ABI compatibility break::A published function selector or event topic changed. Refresh the snapshot with 'make update-abi' only if the break is intended."
+            1) echo "::warning title=ABI changed additively::New functions or events were added. No consumer breaks, but review that the addition is intended." ;;
+            2) echo "::error title=ABI compatibility break::A published function selector or event topic changed against $BASE_REF."
                exit 1 ;;
-            *) echo "::error title=ABI check failed to run::shell/check_abi.sh could not inspect the contracts."
+            *) echo "::error title=ABI check failed to run::shell/check_abi.sh could not compare against $BASE_REF."
                exit 1 ;;
           esac
-
-      # An additive change passes the check above, so without this the snapshot
-      # can drift and a later removal of the drifted entry goes undiagnosed.
-      - name: Check ABI snapshot is current
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: |
-          make update-abi
-          # git status rather than git diff, so a snapshot for a newly scoped
-          # contract is caught too: git diff cannot see an untracked file.
-          if [ -n "$(git status --porcelain .abi/)" ]; then
-            git status --porcelain .abi/
-            git diff -- .abi/
-            echo "::error title=ABI snapshot is out of date::Run 'make update-abi' and commit .abi/."
-            exit 1
-          fi
 
       - name: Check storage layout
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
