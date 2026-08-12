@@ -8,6 +8,9 @@ optimizer = true
 optimizer_runs = 200
 evm_version = "cancun"
 
+[profile.snapshot]
+no_match_test = "^invariant_"
+
 [lint]
 exclude_lints = ["mixed-case-function", "mixed-case-variable"]
 
