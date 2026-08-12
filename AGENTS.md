@@ -48,6 +48,9 @@ High-signal paths:
 
 - `src/StateOracle.sol`: main upgradeable protocol contract
 - `src/StateOracleAccessControl.sol`: ownership and role hierarchy
+- `src/StateOracleV2.sol`: fresh-deployment project-scoped oracle
+- `src/StateOracleV2AccessControl.sol`: V2 ownership and role hierarchy
+- `docs/STATE_ORACLE_V2.md`: V2 roles, structs, lifecycles, and invariants; read before changing V2
 - `src/Batch.sol`: self-`delegatecall` batch execution helper
 - `src/interfaces/`: protocol interfaces
 - `src/lib/AdminVerifierRegistry.sol`: registry helper for admin verifiers
@@ -129,7 +132,13 @@ That invariant is intentionally enforced by custom overrides of:
 
 If you touch this contract, read it fully and update tests accordingly.
 
-### 3. Admin Verifiers
+### 3. `StateOracleV2`
+
+V2 is a fresh-deployment, project-scoped design. It intentionally differs from V1 in its role model, two-step adopter assignment, per-project trigger-unit accounting, manager recovery, retirement, and executor-event semantics.
+
+Before changing V2, read [`docs/STATE_ORACLE_V2.md`](docs/STATE_ORACLE_V2.md). Treat its owner/default-admin coupling, exclusive assignment, assertion-count conservation, trigger-unit conservation, recoverability, pause matrix, and event-consumer rules as explicit design constraints. Update the document and the nearest unit, fuzz, and invariant tests with every behavior change.
+
+### 4. Admin Verifiers
 
 Current verifier implementations:
 
@@ -143,7 +152,7 @@ Important behavior:
 - `AdminVerifierWhitelist.exclude(...)` removes any current whitelist entry and blocks re-whitelisting until the configured releaser clears the exclusion.
 - `AdminVerifierSuperAdmin` is not a production-safe verifier. Keep it test-only unless the user explicitly asks otherwise.
 
-### 4. DA Verifier
+### 5. DA Verifier
 
 `DAVerifierECDSA` approves an assertion when `ECDSA.recoverCalldata(assertionId, proof)` matches the configured `DA_PROVER`.
 
@@ -151,7 +160,7 @@ Important detail:
 
 - `metadata` is currently ignored by `DAVerifierECDSA`; it is passed for interface compatibility.
 
-### 5. Batch Execution
+### 6. Batch Execution
 
 `Batch.batch(bytes[] calldata calls)` executes each encoded call via `delegatecall` into `address(this)`.
 
@@ -177,7 +186,7 @@ When editing upgradeable contracts:
 - keep constructor logic limited to immutable setup and initializer lockout,
 - keep initialization logic in `initialize(...)`.
 
-`StateOracle` inherits from multiple contracts. Be careful with inheritance order and added storage in parent contracts.
+`StateOracle` and `StateOracleV2` inherit from multiple contracts. Be careful with inheritance order and added storage in parent contracts.
 
 If a task requires a storage layout change, call it out clearly and add focused tests.
 
@@ -191,6 +200,12 @@ Use these slices depending on what changed:
   For assertion registration, manager flow, whitelist toggles, adopter behavior.
 - `forge test --match-path test/StateOracleAccessControl.t.sol`
   For ownership, role hierarchy, role transfer, and invariant changes.
+- `forge test --match-path test/StateOracleV2.t.sol`
+  For V2 project, assignment, manager, assertion, retirement, pause, and executor-event behavior.
+- `forge test --match-path test/StateOracleV2FuzzAndCoverage.t.sol`
+  For V2 role isolation, bounds, recovery, lifecycle edge cases, and accounting fuzz tests.
+- `forge test --match-path test/StateOracleV2.invariant.t.sol`
+  For V2 stateful assignment, assertion-count, trigger-unit, ownership, and retirement invariants.
 - `forge test --match-path test/AdminVerifierWhitelist.t.sol`
   For whitelist verifier behavior.
 - `forge test --match-path test/AdminVerifierSuperAdmin.t.sol`
@@ -333,6 +348,19 @@ Expect to inspect and often update:
 - `test/integration/StateOracleWithDAVerifierECDSA.sol`
 - possibly `README.md`
 - possibly `artifacts/` via generation if ABI changed
+
+### If the task changes `StateOracleV2`
+
+Expect to inspect and often update:
+
+- `src/StateOracleV2.sol`
+- `src/StateOracleV2AccessControl.sol`
+- `docs/STATE_ORACLE_V2.md`
+- `test/StateOracleV2.t.sol`
+- `test/StateOracleV2FuzzAndCoverage.t.sol`
+- `test/StateOracleV2.invariant.t.sol`
+- possibly `script/DeployCoreV2.s.sol`
+- possibly `artifacts/` via generation if the public ABI changed
 
 ### If the task changes role or ownership behavior
 
