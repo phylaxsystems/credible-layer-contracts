@@ -10,11 +10,14 @@ if ! RAW=$(forge inspect StateOracle storage-layout --json); then
     exit 3
 fi
 
+# Generating the snapshot here instead would write it into the ephemeral CI
+# runner and exit 0, so a pull request that deleted the tracked snapshot would
+# pass and every later run would re-baseline against itself. Creating it stays
+# an explicit action.
 if [ ! -f "$SNAPSHOT_FILE" ]; then
-    echo "No .storage-layout snapshot found. Generating..."
-    echo "$RAW" > "$SNAPSHOT_FILE"
-    echo "Snapshot saved to $SNAPSHOT_FILE"
-    exit 0
+    echo "ERROR: no $SNAPSHOT_FILE found, so there is nothing to compare against." >&2
+    echo "Create it with: make update-storage-layout" >&2
+    exit 3
 fi
 
 # solc embeds AST node ids in contract, struct and enum type identifiers and in
@@ -116,11 +119,15 @@ for i in $(seq 0 $((prev_count - 1))); do
     fi
 done
 
-# Struct members carry the real layout of everything behind a mapping, so they
-# are compared too. Reordering them relocates every deployed record.
+# Every previous type is compared, not just the ones with members. A user
+# defined value type keeps its normalized key when its underlying type changes,
+# so its top-level storage entry still matches and only the width in this table
+# records the change - which relocates or retypes every record behind a mapping.
+# Struct members carry the real layout of everything behind a mapping too, so
+# they are compared below. Reordering them relocates every deployed record.
 # The key queries are captured rather than read from a process substitution,
 # whose exit status would be discarded.
-if ! struct_types=$(echo "$PREVIOUS" | jq -r '.types | to_entries[] | select(.value.members != null) | .key'); then
+if ! previous_types=$(echo "$PREVIOUS" | jq -r '.types | keys[]'); then
     echo "ERROR: could not read the types table from $SNAPSHOT_FILE." >&2
     exit 3
 fi
@@ -131,6 +138,39 @@ while read -r type_id; do
     if [ "$(echo "$CURRENT" | jq --arg t "$type_id" '.types | has($t)')" != "true" ]; then
         echo "WARNING: Type '$type_id' was removed from the layout!"
         collision_detected=true
+        continue
+    fi
+
+    # A type that carries members may legitimately grow: appending a field to a
+    # struct reached through a mapping leaves every existing record where it is,
+    # and a struct stored inline that grows moves the variables after it, which
+    # the storage loop above already reports. Shrinking is a break either way,
+    # and for a type without members any width change at all repacks it.
+    if ! type_diff=$(jq -rn --argjson p "$PREVIOUS" --argjson c "$CURRENT" --arg t "$type_id" '
+        def shape: {encoding, label, key, value, base};
+        ($p.types[$t]) as $old
+        | ($c.types[$t]) as $new
+        | [
+            (if ($old | shape) != ($new | shape) then
+                 "\($old | shape | tojson) -> \($new | shape | tojson)"
+             else empty end),
+            (if ($old.numberOfBytes | tonumber) > ($new.numberOfBytes | tonumber)
+                or ($old.members == null and $old.numberOfBytes != $new.numberOfBytes) then
+                 "numberOfBytes \($old.numberOfBytes) -> \($new.numberOfBytes)"
+             else empty end)
+          ]
+        | join("; ")
+    '); then
+        echo "ERROR: could not compare type '$type_id' against $SNAPSHOT_FILE." >&2
+        exit 3
+    fi
+
+    if [ -n "$type_diff" ]; then
+        echo "CRITICAL: Type '$type_id' changed: $type_diff!"
+        collision_detected=true
+    fi
+
+    if [ "$(echo "$PREVIOUS" | jq --arg t "$type_id" '.types[$t].members != null')" != "true" ]; then
         continue
     fi
 
@@ -157,7 +197,7 @@ while read -r type_id; do
             collision_detected=true
         fi
     done <<<"$member_labels"
-done <<<"$struct_types"
+done <<<"$previous_types"
 
 if $collision_detected; then
     echo ""

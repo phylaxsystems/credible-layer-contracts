@@ -53,14 +53,11 @@ jobs:
               base="$PR_BASE_SHA"
               ;;
             push)
-              # A branch's first push reports an all-zero "before", and a
-              # force-pushed or garbage-collected predecessor can be gone.
-              # HEAD^ is the same comparison for a normal fast-forward push.
+              # No fallback to HEAD^: after main is force-pushed or recreated,
+              # HEAD^ belongs to the rewritten history rather than the published
+              # ABI, so a break would be compared cleanly against its own new
+              # parent and pass. An unresolvable predecessor fails below instead.
               base="$PUSH_BEFORE_SHA"
-              if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-                echo "Push base '${base}' does not resolve; using HEAD^."
-                base="HEAD^"
-              fi
               ;;
             *)
               base="origin/main"

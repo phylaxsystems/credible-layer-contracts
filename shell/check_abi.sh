@@ -17,18 +17,34 @@ set -euo pipefail
 #   2  ABI compatibility break
 #   3  the check could not run
 
-# The contracts published to npm by shell/create_artifacts.sh, plus
-# AdminVerifierWhitelist, whose signatures the dapp seed script calls by literal
-# string through `cast send` and so cannot break at compile time.
-CONTRACTS=(
-    StateOracle
-    AdminVerifierOwner
-    AdminVerifierWhitelist
-    DAVerifierECDSA
-    IBatch
-    IDAVerifier
-    IAdminVerifier
-    AdminVerifierRegistry
+# The scope is read out of shell/create_artifacts.sh rather than repeated here,
+# because a second hand-maintained list drifts the moment a contract is added to
+# the published package and not to this check. Added to it is
+# AdminVerifierWhitelist, which is published nowhere but whose signatures the
+# dapp seed script calls by literal string through `cast send`, so they cannot
+# break at compile time either.
+PUBLISHER="$(dirname "${BASH_SOURCE[0]}")/create_artifacts.sh"
+UNPUBLISHED_CONTRACTS=(AdminVerifierWhitelist)
+
+if [ ! -f "$PUBLISHER" ]; then
+    echo "ERROR: $PUBLISHER not found, so the published ABI scope cannot be read." >&2
+    exit 3
+fi
+
+mapfile -t PUBLISHED_CONTRACTS < <(
+    sed -n 's|^extract_abi "\$ROOT_DIR/out/[^/]*\.sol/\([A-Za-z0-9_]*\)\.json".*|\1|p' "$PUBLISHER"
+)
+
+# A pattern that stops matching would leave the scope empty, and the check would
+# then report a pass having compared nothing.
+if [ ${#PUBLISHED_CONTRACTS[@]} -eq 0 ]; then
+    echo "ERROR: no extract_abi calls could be read from $PUBLISHER, so this check" >&2
+    echo "would compare nothing. Has the publisher's call format changed?" >&2
+    exit 3
+fi
+
+mapfile -t CONTRACTS < <(
+    printf '%s\n' "${PUBLISHED_CONTRACTS[@]}" "${UNPUBLISHED_CONTRACTS[@]}" | sort -u
 )
 
 BASE_REF="${1:-${ABI_BASE_REF:-origin/main}}"
@@ -277,6 +293,23 @@ for contract in "${CONTRACTS[@]}"; do
             echo "NOTE: $contract: new $section entry '$signature' ($key)."
             additive=true
         done <<<"$added"
+
+        # Functions and errors are keyed by a 4-byte selector, so two different
+        # canonical signatures can share a key. Nothing above would notice:
+        # the entry looks present on both sides while old calldata is decoded
+        # under a different input layout.
+        if ! shared=$(common_keys "$previous" "$current" "$section"); then
+            compare_error "$contract"
+        fi
+        while read -r key; do
+            [ -n "$key" ] || continue
+            old_signature=$(echo "$previous" | jq -r --arg k "$key" --arg s "$section" '.[$s][$k].signature')
+            new_signature=$(echo "$current" | jq -r --arg k "$key" --arg s "$section" '.[$s][$k].signature')
+            if [ "$old_signature" != "$new_signature" ]; then
+                echo "CRITICAL: $contract: $section key $key now resolves to '$new_signature' instead of '$old_signature'!"
+                breaking=true
+            fi
+        done <<<"$shared"
     done
 
     # topic0 does not cover indexedness, so an indexed flip keeps the same key
