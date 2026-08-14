@@ -17,3 +17,99 @@ jobs:
     uses: phylaxsystems/actions/.github/workflows/solidity-base.yaml@main
     with:
       gas-diff-tolerance: 25
+
+  contract-compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      # The ABI check builds the base revision in a second worktree, so it needs
+      # the history rather than just the tip.
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.4.2
+      - name: Build contracts
+        id: build
+        run: forge build
+
+      # The ABI the change has to stay compatible with: for a pull request the
+      # commit it branched from, for a push to main the tip before the push.
+      #
+      # Never fall back to origin/main on a push - on main that IS the commit
+      # under test, so the comparison would be HEAD against HEAD and the job
+      # would report a green check having verified nothing.
+      - name: Resolve base revision
+        id: base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          case "$EVENT_NAME" in
+            pull_request)
+              base="$PR_BASE_SHA"
+              ;;
+            push)
+              # No fallback to HEAD^: after main is force-pushed or recreated,
+              # HEAD^ belongs to the rewritten history rather than the published
+              # ABI, so a break would be compared cleanly against its own new
+              # parent and pass. An unresolvable predecessor fails below instead.
+              base="$PUSH_BEFORE_SHA"
+              ;;
+            *)
+              base="origin/main"
+              ;;
+          esac
+
+          if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            echo "::error::Base revision '${base}' does not resolve, so there is nothing to compare against. Refusing to report a pass."
+            exit 1
+          fi
+
+          if [ "$(git rev-parse "${base}^{commit}")" = "$(git rev-parse 'HEAD^{commit}')" ]; then
+            echo "::error::Base resolved to HEAD, so the comparison would verify nothing. Refusing to report a pass."
+            exit 1
+          fi
+
+          echo "Comparing against ${base} ($(git rev-parse "${base}^{commit}"))."
+          echo "ref=${base}" >> "$GITHUB_OUTPUT"
+
+      # Both scripts are invoked directly rather than through make, because make
+      # reports every failed recipe as exit 2 and that erases the severity the
+      # scripts encode in their own exit codes.
+      - name: Check ABI compatibility
+        env:
+          BASE_REF: ${{ steps.base.outputs.ref }}
+        run: |
+          set +e
+          bash shell/check_abi.sh "$BASE_REF"
+          status=$?
+          set -e
+          case $status in
+            0) ;;
+            1) echo "::warning title=ABI changed additively::New functions or events were added. No consumer breaks, but review that the addition is intended." ;;
+            2) echo "::error title=ABI compatibility break::A published function selector or event topic changed against $BASE_REF."
+               exit 1 ;;
+            *) echo "::error title=ABI check failed to run::shell/check_abi.sh could not compare against $BASE_REF."
+               exit 1 ;;
+          esac
+
+      - name: Check storage layout
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          set +e
+          bash shell/check_storage_layout.sh
+          status=$?
+          set -e
+          case $status in
+            0) ;;
+            1) echo "::error title=Storage layout snapshot is stale::The layout changed without a collision. Run 'make update-storage-layout' and commit .storage-layout."
+               exit 1 ;;
+            2) echo "::error title=Storage layout collision::An existing variable changed slot, offset or type. This breaks deployed proxies."
+               exit 1 ;;
+            *) echo "::error title=Storage layout check failed to run::shell/check_storage_layout.sh could not inspect the contract."
+               exit 1 ;;
+          esac
