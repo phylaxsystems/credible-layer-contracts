@@ -99,9 +99,11 @@ Important details:
 - The constructor sets immutable configuration and then disables initialization on the implementation.
 - Real initialization happens through `initialize(...)` on the proxy.
 - `whitelistEnabled` is set to `true` during initialization.
-- `hasAssertion()` only checks whether the assertion was ever added, not whether it is currently active.
-- Removed assertions cannot be re-added because their `activationBlock` remains non-zero.
-- `assertionCount` tracks currently registered, not-yet-removed assertions for each adopter.
+- `hasAssertion()` reports whether the assertion is currently enabled in oracle storage.
+- Removed assertions can be re-added after a fresh DA verification.
+- `assertionCount` tracks currently enabled assertions for each adopter.
+- Activation and deactivation blocks are emitted in events rather than persisted in assertion storage.
+- The boolean assertion mapping is not storage-compatible with proxies populated using the former assertion-window layout.
 
 ### 2. `StateOracleAccessControl`
 
@@ -264,12 +266,12 @@ Many tests disable it in `setUp()` to isolate the behavior being tested. If you 
 
 An assertion:
 
-- becomes active at `block.number + ASSERTION_TIMELOCK_BLOCKS`,
-- becomes inactive at `block.number + ASSERTION_TIMELOCK_BLOCKS` when removed,
-- cannot be added twice,
-- cannot be re-added after removal.
+- emits an activation block at `block.number + ASSERTION_TIMELOCK_BLOCKS` when enabled,
+- emits a deactivation block at `block.number + ASSERTION_TIMELOCK_BLOCKS` when disabled,
+- cannot be added while already enabled,
+- can be re-added after removal, including before the prior deactivation block is reached.
 
-Do not accidentally "fix" this without confirming product intent; the README and implementation currently agree on this one-time registration rule.
+The enabled flag changes immediately on chain; event consumers are responsible for applying the timelocked transitions.
 
 ### `AdminVerifierOwner` compatibility
 

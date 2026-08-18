@@ -45,8 +45,6 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     error InvalidAssertionTimelock();
     /// @notice Thrown when attempting to add more assertions than the maximum allowed
     error TooManyAssertions();
-    /// @notice Thrown when attempting to remove or modify an already removed assertion
-    error AssertionAlreadyRemoved();
     /// @notice Thrown when whitelist is enabled and caller is not whitelisted
     error NotWhitelisted();
     /// @notice Thrown when attempting to add an account that is already whitelisted
@@ -59,21 +57,14 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     error WhitelistAlreadyDisabled();
 
     /// @notice Struct containing assertion adopter data
+    /// @dev The assertions mapping is not storage-compatible with the AssertionWindow mapping used before this layout.
     /// @param manager Address authorized to manage assertions
-    /// @param assertions Mapping of assertion IDs to assertion windows, describing the assertion's lifecycle
+    /// @param assertions Mapping of assertion IDs to their enabled state
     struct AssertionAdopter {
         address manager;
         address pendingManager;
         uint16 assertionCount;
-        mapping(bytes32 assertionId => AssertionWindow assertionWindow) assertions;
-    }
-
-    /// @notice Struct containing the assertion time window
-    /// @param activationBlock Block number when the assertion becomes active
-    /// @param deactivationBlock Block number when the assertion becomes inactive
-    struct AssertionWindow {
-        uint256 activationBlock;
-        uint256 deactivationBlock;
+        mapping(bytes32 assertionId => bool isEnabled) assertions;
     }
 
     /// @notice Emitted when a new assertion adopter is registered
@@ -229,8 +220,7 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     }
 
     /// @notice Adds a new assertion for an assertion adopter
-    /// @dev An assertion ID can be added only once. If removed (inactive),
-    /// it cannot be re-added - attempting to reuse the same ID will revert.
+    /// @dev A disabled assertion ID can be added again. Each addition requires a valid DA proof.
     /// @param contractAddress The address of the assertion adopter
     /// @param assertionId The unique identifier for the assertion
     /// @param daVerifier The DA verifier to use for proof verification
@@ -249,7 +239,7 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         require(assertionAdopters[contractAddress].assertionCount < maxAssertionsPerAA, TooManyAssertions());
 
         uint256 activationBlock = block.number + ASSERTION_TIMELOCK_BLOCKS;
-        assertionAdopters[contractAddress].assertions[assertionId].activationBlock = activationBlock;
+        assertionAdopters[contractAddress].assertions[assertionId] = true;
         assertionAdopters[contractAddress].assertionCount++;
         emit AssertionAdded(contractAddress, assertionId, activationBlock, daVerifier, metadata, proof);
     }
@@ -317,38 +307,18 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @param assertionId The unique identifier of the assertion to remove
     function _removeAssertion(address contractAddress, bytes32 assertionId) internal {
         require(hasAssertion(contractAddress, assertionId), AssertionDoesNotExist());
-        require(
-            assertionAdopters[contractAddress].assertions[assertionId].deactivationBlock == 0, AssertionAlreadyRemoved()
-        );
         uint256 deactivationBlock = block.number + ASSERTION_TIMELOCK_BLOCKS;
-        assertionAdopters[contractAddress].assertions[assertionId].deactivationBlock = deactivationBlock;
+        assertionAdopters[contractAddress].assertions[assertionId] = false;
         assertionAdopters[contractAddress].assertionCount--;
         emit AssertionRemoved(contractAddress, assertionId, deactivationBlock);
     }
 
-    /// @notice Checks if an assertion is associated with an assertion adopter
+    /// @notice Checks if an assertion is enabled for an assertion adopter
     /// @param contractAddress The address of the contract
     /// @param assertionId The unique identifier of the assertion
-    /// @return isAssociated True if the assertion is associated with the adopter, false otherwise
-    function hasAssertion(address contractAddress, bytes32 assertionId) public view returns (bool isAssociated) {
-        return assertionAdopters[contractAddress].assertions[assertionId].activationBlock != 0;
-    }
-
-    /// @notice Gets the assertion window for a given assertion adopter and assertion
-    /// @dev Returns 0 for both activationBlock and deactivationBlock if the assertion is not associated
-    /// @param contractAddress The address of the assertion adopter
-    /// @param assertionId The unique identifier of the assertion
-    /// @return activationBlock The block number when the assertion becomes active
-    /// @return deactivationBlock The block number when the assertion becomes inactive
-    function getAssertionWindow(address contractAddress, bytes32 assertionId)
-        public
-        view
-        returns (uint256 activationBlock, uint256 deactivationBlock)
-    {
-        return (
-            assertionAdopters[contractAddress].assertions[assertionId].activationBlock,
-            assertionAdopters[contractAddress].assertions[assertionId].deactivationBlock
-        );
+    /// @return isEnabled True if the assertion is enabled for the adopter, false otherwise
+    function hasAssertion(address contractAddress, bytes32 assertionId) public view returns (bool isEnabled) {
+        return assertionAdopters[contractAddress].assertions[assertionId];
     }
 
     /// @notice Gets the assertion count for a given assertion adopter

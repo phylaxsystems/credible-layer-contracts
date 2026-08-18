@@ -25,31 +25,31 @@
       "type": "t_mapping(t_bytes32,t_struct(RoleData)22_storage)"
     },
     {
-      "astId": 1058,
+      "astId": 1057,
       "contract": "src/StateOracle.sol:StateOracle",
       "label": "assertionAdopters",
       "offset": 0,
       "slot": "3",
-      "type": "t_mapping(t_address,t_struct(AssertionAdopter)979_storage)"
+      "type": "t_mapping(t_address,t_struct(AssertionAdopter)975_storage)"
     },
     {
-      "astId": 1064,
+      "astId": 1063,
       "contract": "src/StateOracle.sol:StateOracle",
       "label": "adminVerifiers",
       "offset": 0,
       "slot": "4",
-      "type": "t_mapping(t_contract(IAdminVerifier)2524,t_bool)"
+      "type": "t_mapping(t_contract(IAdminVerifier)2496,t_bool)"
     },
     {
-      "astId": 1070,
+      "astId": 1069,
       "contract": "src/StateOracle.sol:StateOracle",
       "label": "daVerifiers",
       "offset": 0,
       "slot": "5",
-      "type": "t_mapping(t_contract(IDAVerifier)2553,t_bool)"
+      "type": "t_mapping(t_contract(IDAVerifier)2525,t_bool)"
     },
     {
-      "astId": 1075,
+      "astId": 1074,
       "contract": "src/StateOracle.sol:StateOracle",
       "label": "whitelist",
       "offset": 0,
@@ -57,7 +57,7 @@
       "type": "t_mapping(t_address,t_bool)"
     },
     {
-      "astId": 1078,
+      "astId": 1077,
       "contract": "src/StateOracle.sol:StateOracle",
       "label": "whitelistEnabled",
       "offset": 0,
@@ -65,7 +65,7 @@
       "type": "t_bool"
     },
     {
-      "astId": 1081,
+      "astId": 1080,
       "contract": "src/StateOracle.sol:StateOracle",
       "label": "maxAssertionsPerAA",
       "offset": 1,
@@ -89,12 +89,12 @@
       "label": "bytes32",
       "numberOfBytes": "32"
     },
-    "t_contract(IAdminVerifier)2524": {
+    "t_contract(IAdminVerifier)2496": {
       "encoding": "inplace",
       "label": "contract IAdminVerifier",
       "numberOfBytes": "20"
     },
-    "t_contract(IDAVerifier)2553": {
+    "t_contract(IDAVerifier)2525": {
       "encoding": "inplace",
       "label": "contract IDAVerifier",
       "numberOfBytes": "20"
@@ -106,19 +106,19 @@
       "numberOfBytes": "32",
       "value": "t_bool"
     },
-    "t_mapping(t_address,t_struct(AssertionAdopter)979_storage)": {
+    "t_mapping(t_address,t_struct(AssertionAdopter)975_storage)": {
       "encoding": "mapping",
       "key": "t_address",
       "label": "mapping(address => struct StateOracle.AssertionAdopter)",
       "numberOfBytes": "32",
-      "value": "t_struct(AssertionAdopter)979_storage"
+      "value": "t_struct(AssertionAdopter)975_storage"
     },
-    "t_mapping(t_bytes32,t_struct(AssertionWindow)985_storage)": {
+    "t_mapping(t_bytes32,t_bool)": {
       "encoding": "mapping",
       "key": "t_bytes32",
-      "label": "mapping(bytes32 => struct StateOracle.AssertionWindow)",
+      "label": "mapping(bytes32 => bool)",
       "numberOfBytes": "32",
-      "value": "t_struct(AssertionWindow)985_storage"
+      "value": "t_bool"
     },
     "t_mapping(t_bytes32,t_struct(RoleData)22_storage)": {
       "encoding": "mapping",
@@ -127,27 +127,27 @@
       "numberOfBytes": "32",
       "value": "t_struct(RoleData)22_storage"
     },
-    "t_mapping(t_contract(IAdminVerifier)2524,t_bool)": {
+    "t_mapping(t_contract(IAdminVerifier)2496,t_bool)": {
       "encoding": "mapping",
-      "key": "t_contract(IAdminVerifier)2524",
+      "key": "t_contract(IAdminVerifier)2496",
       "label": "mapping(contract IAdminVerifier => bool)",
       "numberOfBytes": "32",
       "value": "t_bool"
     },
-    "t_mapping(t_contract(IDAVerifier)2553,t_bool)": {
+    "t_mapping(t_contract(IDAVerifier)2525,t_bool)": {
       "encoding": "mapping",
-      "key": "t_contract(IDAVerifier)2553",
+      "key": "t_contract(IDAVerifier)2525",
       "label": "mapping(contract IDAVerifier => bool)",
       "numberOfBytes": "32",
       "value": "t_bool"
     },
-    "t_struct(AssertionAdopter)979_storage": {
+    "t_struct(AssertionAdopter)975_storage": {
       "encoding": "inplace",
       "label": "struct StateOracle.AssertionAdopter",
       "numberOfBytes": "96",
       "members": [
         {
-          "astId": 969,
+          "astId": 966,
           "contract": "src/StateOracle.sol:StateOracle",
           "label": "manager",
           "offset": 0,
@@ -155,7 +155,7 @@
           "type": "t_address"
         },
         {
-          "astId": 971,
+          "astId": 968,
           "contract": "src/StateOracle.sol:StateOracle",
           "label": "pendingManager",
           "offset": 0,
@@ -163,7 +163,7 @@
           "type": "t_address"
         },
         {
-          "astId": 973,
+          "astId": 970,
           "contract": "src/StateOracle.sol:StateOracle",
           "label": "assertionCount",
           "offset": 20,
@@ -171,35 +171,12 @@
           "type": "t_uint16"
         },
         {
-          "astId": 978,
+          "astId": 974,
           "contract": "src/StateOracle.sol:StateOracle",
           "label": "assertions",
           "offset": 0,
           "slot": "2",
-          "type": "t_mapping(t_bytes32,t_struct(AssertionWindow)985_storage)"
-        }
-      ]
-    },
-    "t_struct(AssertionWindow)985_storage": {
-      "encoding": "inplace",
-      "label": "struct StateOracle.AssertionWindow",
-      "numberOfBytes": "64",
-      "members": [
-        {
-          "astId": 982,
-          "contract": "src/StateOracle.sol:StateOracle",
-          "label": "activationBlock",
-          "offset": 0,
-          "slot": "0",
-          "type": "t_uint256"
-        },
-        {
-          "astId": 984,
-          "contract": "src/StateOracle.sol:StateOracle",
-          "label": "deactivationBlock",
-          "offset": 0,
-          "slot": "1",
-          "type": "t_uint256"
+          "type": "t_mapping(t_bytes32,t_bool)"
         }
       ]
     },
@@ -230,11 +207,6 @@
       "encoding": "inplace",
       "label": "uint16",
       "numberOfBytes": "2"
-    },
-    "t_uint256": {
-      "encoding": "inplace",
-      "label": "uint256",
-      "numberOfBytes": "32"
     }
   }
 }

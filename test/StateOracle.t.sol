@@ -72,9 +72,6 @@ contract StateOracleBase is Test, ProxyHelper {
         stateOracle.addAssertion(adopter, assertionId, daVerifierMock, new bytes(0), new bytes(0));
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion not found");
-        (uint256 activationBlock, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
-        assertEq(activationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Activation block mismatch");
-        assertEq(deactivationBlock, 0, "Deactivation block mismatch");
     }
 }
 
@@ -184,6 +181,57 @@ contract AddAssertion is StateOracleBase {
         addAssertionAndAssert(manager, adopter, assertionId2);
     }
 
+    function testFuzz_readdRemovedAssertion(bytes32 assertionId) public {
+        (address adopter, address manager) = registerAssertionAdopter();
+        addAssertionAndAssert(manager, adopter, assertionId);
+
+        vm.startPrank(manager);
+        stateOracle.removeAssertion(adopter, assertionId);
+        assertFalse(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be disabled");
+        assertEq(stateOracle.getAssertionCount(adopter), 0, "Assertion count should decrease");
+
+        uint256 activationBlock = block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
+        vm.expectEmit(true, true, true, true, address(stateOracle));
+        emit StateOracle.AssertionAdded(
+            adopter, assertionId, activationBlock, daVerifierMock, new bytes(0), new bytes(0)
+        );
+        stateOracle.addAssertion(adopter, assertionId, daVerifierMock, new bytes(0), new bytes(0));
+        vm.stopPrank();
+
+        assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be re-enabled");
+        assertEq(stateOracle.getAssertionCount(adopter), 1, "Assertion count should increase");
+    }
+
+    function testFuzz_addRemoveAssertionSequence(bytes32 assertionId, uint8 operations) public {
+        (address adopter, address manager) = registerAssertionAdopter();
+        bool isEnabled;
+
+        vm.startPrank(manager);
+        for (uint256 i = 0; i < 8; i++) {
+            bool shouldAdd = ((operations >> i) & 1) == 1;
+
+            if (shouldAdd) {
+                if (isEnabled) {
+                    vm.expectRevert(StateOracle.AssertionAlreadyExists.selector);
+                } else {
+                    isEnabled = true;
+                }
+                stateOracle.addAssertion(adopter, assertionId, daVerifierMock, new bytes(0), new bytes(0));
+            } else {
+                if (isEnabled) {
+                    isEnabled = false;
+                } else {
+                    vm.expectRevert(StateOracle.AssertionDoesNotExist.selector);
+                }
+                stateOracle.removeAssertion(adopter, assertionId);
+            }
+
+            assertEq(stateOracle.hasAssertion(adopter, assertionId), isEnabled, "Assertion state mismatch");
+            assertEq(stateOracle.getAssertionCount(adopter), isEnabled ? 1 : 0, "Assertion count mismatch");
+        }
+        vm.stopPrank();
+    }
+
     function testFuzz_RevertIf_addAssertionNotRegistered(address adopter, bytes32 assertionId) public {
         vm.prank(address(1));
         vm.expectRevert(StateOracle.AssertionAdopterNotRegistered.selector);
@@ -278,20 +326,15 @@ contract RemoveAssertion is StateOracleBase {
     function testFuzz_removeAssertion(bytes32 assertionId) public {
         (address adopter, address manager) = registerAssertionAdopter();
         addAssertionAndAssert(manager, adopter, assertionId);
-        (uint256 activationBlockBefore,) = stateOracle.getAssertionWindow(adopter, assertionId);
 
         vm.roll(block.number + 1);
 
         vm.prank(manager);
         stateOracle.removeAssertion(adopter, assertionId);
-        (uint256 activationBlock, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
-        assertEq(activationBlock, activationBlockBefore, "Activation should not change");
-        assertEq(
-            deactivationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Deactivation block mismatch"
-        );
+        assertFalse(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be disabled");
     }
 
-    function testFuzz_RevertIf_removeAssertionAlreadyRemoved(bytes32 assertionId) public {
+    function testFuzz_RevertIf_removeDisabledAssertion(bytes32 assertionId) public {
         (address adopter, address manager) = registerAssertionAdopter();
         addAssertionAndAssert(manager, adopter, assertionId);
         vm.roll(block.number + 1);
@@ -299,7 +342,7 @@ contract RemoveAssertion is StateOracleBase {
         vm.startPrank(manager);
         stateOracle.removeAssertion(adopter, assertionId);
         assertEq(stateOracle.getAssertionCount(adopter), registeredAssertions - 1, "Assertion count should decrease");
-        vm.expectRevert(StateOracle.AssertionAlreadyRemoved.selector);
+        vm.expectRevert(StateOracle.AssertionDoesNotExist.selector);
         stateOracle.removeAssertion(adopter, assertionId);
         vm.stopPrank();
 
@@ -309,17 +352,12 @@ contract RemoveAssertion is StateOracleBase {
     function testFuzz_removeAssertionByAdmin(bytes32 assertionId) public {
         (address adopter, address manager) = registerAssertionAdopter();
         addAssertionAndAssert(manager, adopter, assertionId);
-        (uint256 activationBlockBefore,) = stateOracle.getAssertionWindow(adopter, assertionId);
 
         vm.roll(block.number + 1);
 
         vm.prank(stateOracle.owner());
         stateOracle.removeAssertionByGuardian(adopter, assertionId);
-        (uint256 activationBlock, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
-        assertEq(activationBlock, activationBlockBefore, "Activation should not change");
-        assertEq(
-            deactivationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Deactivation block mismatch"
-        );
+        assertFalse(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be disabled");
     }
 
     function testFuzz_RevertIf_removeAssertionByUnauthorizedAdmin(bytes32 assertionId, address unauthorizedAdmin)
@@ -736,11 +774,27 @@ contract Batch is StateOracleBase {
         vm.prank(OWNER);
         stateOracle.batch(calls);
 
-        (, uint256 deactivationBlock1) = stateOracle.getAssertionWindow(adopter, assertionId1);
-        (, uint256 deactivationBlock2) = stateOracle.getAssertionWindow(adopter, assertionId2);
+        assertFalse(stateOracle.hasAssertion(adopter, assertionId1), "Assertion 1 should have been disabled");
+        assertFalse(stateOracle.hasAssertion(adopter, assertionId2), "Assertion 2 should have been disabled");
+    }
 
-        assertTrue(deactivationBlock1 != 0, "Assertion 1 should have been removed");
-        assertTrue(deactivationBlock2 != 0, "Assertion 2 should have been removed");
+    function testFuzz_batchToggleAssertion(bytes32 assertionId) public {
+        (address adopter, address manager) = registerAssertionAdopter();
+
+        bytes[] memory calls = new bytes[](3);
+        calls[0] = abi.encodeWithSelector(
+            StateOracle.addAssertion.selector, adopter, assertionId, daVerifierMock, new bytes(0), new bytes(0)
+        );
+        calls[1] = abi.encodeWithSelector(StateOracle.removeAssertion.selector, adopter, assertionId);
+        calls[2] = abi.encodeWithSelector(
+            StateOracle.addAssertion.selector, adopter, assertionId, daVerifierMock, new bytes(0), new bytes(0)
+        );
+
+        vm.prank(manager);
+        stateOracle.batch(calls);
+
+        assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be enabled");
+        assertEq(stateOracle.getAssertionCount(adopter), 1, "Assertion count should match enabled assertions");
     }
 
     function testFuzz_batchResetStorage(bytes32 storageKey) public {
@@ -1262,8 +1316,7 @@ contract RemoveAssertionWithWhitelist is WhitelistBase {
         vm.prank(USER1);
         stateOracle.removeAssertion(address(adopter), assertionId);
 
-        (, uint256 deactivationBlock) = stateOracle.getAssertionWindow(address(adopter), assertionId);
-        assertTrue(deactivationBlock != 0, "Assertion should be marked for removal");
+        assertFalse(stateOracle.hasAssertion(address(adopter), assertionId), "Assertion should be disabled");
     }
 }
 
@@ -1586,21 +1639,22 @@ contract GuardianEmergencyActions is GuardianRoleBase {
         stateOracle.addAssertion(address(adopter), assertionId, daVerifierMock, new bytes(0), new bytes(0));
         vm.stopPrank();
 
-        (uint256 activationBlockBefore,) = stateOracle.getAssertionWindow(address(adopter), assertionId);
-
         vm.roll(block.number + 1);
         uint256 removalBlock = block.number;
+        uint256 expectedDeactivationBlock = removalBlock + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
 
         // Guardian can remove assertion
+        vm.expectEmit(true, true, false, true, address(stateOracle));
+        emit StateOracle.AssertionRemoved(address(adopter), assertionId, expectedDeactivationBlock);
         vm.prank(GUARDIAN);
         stateOracle.removeAssertionByGuardian(address(adopter), assertionId);
 
-        // Verify deactivation block is set correctly
-        (uint256 activationBlock, uint256 deactivationBlock) =
-            stateOracle.getAssertionWindow(address(adopter), assertionId);
-        assertEq(activationBlock, activationBlockBefore, "Activation block should not change");
-        uint256 expectedDeactivationBlock = removalBlock + stateOracle.ASSERTION_TIMELOCK_BLOCKS();
-        assertEq(deactivationBlock, expectedDeactivationBlock, "Deactivation block should be set correctly");
+        assertFalse(stateOracle.hasAssertion(address(adopter), assertionId), "Assertion should be disabled");
+
+        vm.prank(USER1);
+        stateOracle.addAssertion(address(adopter), assertionId, daVerifierMock, new bytes(0), new bytes(0));
+
+        assertTrue(stateOracle.hasAssertion(address(adopter), assertionId), "Assertion should be re-enabled");
     }
 
     function test_guardianCanRevokeManager() public {
