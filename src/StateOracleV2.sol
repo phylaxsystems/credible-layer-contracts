@@ -12,12 +12,16 @@ import {IDAVerifier} from "./interfaces/IDAVerifier.sol";
 import {ITriggerManifestValidator} from "./interfaces/ITriggerManifestValidator.sol";
 import {AdminVerifierRegistry} from "./lib/AdminVerifierRegistry.sol";
 import {DAVerifierRegistry} from "./lib/DAVerifierRegistry.sol";
+import {ExecutorEventGuard} from "./lib/ExecutorEventGuard.sol";
 
 /// @notice Project-scoped assertion registry for fresh V2 deployments.
 contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Pausable {
     using AdminVerifierRegistry for mapping(IAdminVerifier verifier => bool registered);
     using DAVerifierRegistry for mapping(IDAVerifier verifier => bool registered);
 
+    uint256 private constant MAX_MANIFEST_DATA_LENGTH = 65_536;
+    uint256 private constant MAX_DA_PROOF_LENGTH = 65_536;
+    uint256 private constant MAX_DA_METADATA_LENGTH = 4_096;
     uint256 private constant MAX_ADMIN_DATA_LENGTH = 4_096;
     uint256 public immutable ASSERTION_TIMELOCK_BLOCKS;
 
@@ -42,6 +46,22 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         uint32 assertionCount;
     }
 
+    struct TriggerManifest {
+        bytes32 schemaId;
+        bytes data;
+    }
+
+    struct AssertionArtifact {
+        bytes32 deploymentCodeHash;
+        TriggerManifest triggerManifest;
+    }
+
+    struct DAProof {
+        IDAVerifier verifier;
+        bytes metadata;
+        bytes proof;
+    }
+
     struct AssertionInstallation {
         uint64 triggerUnits;
         bytes32 manifestSchemaId;
@@ -63,6 +83,7 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     error ProjectRetirementAlreadyRequested();
     error ProjectRetirementNotRequested();
     error TriggerLimitUnchanged();
+    error TriggerLimitExceeded();
     error UnauthorizedRegistrant();
     error InvalidAssertionAdopter();
     error AssertionAdopterAlreadyAssigned();
@@ -70,8 +91,16 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     error PendingAssignmentExists();
     error NoPendingAssignment();
     error AssertionAdopterHasAssertions();
+    error AssertionAlreadyExists();
+    error AssertionDoesNotExist();
+    error InvalidAssertionId();
+    error EffectiveBlockOverflow();
+    error DAVerifierNotRegistered();
+    error InvalidDAProof(IDAVerifier verifier);
+    error TriggerManifestValidatorNotRegistered();
     error TriggerManifestValidatorUnchanged();
     error InvalidTriggerManifestValidator();
+    error InvalidTriggerUnits();
     error DataTooLarge();
 
     event ProjectCreated(bytes32 indexed projectId, address indexed protocolManager);
@@ -90,6 +119,26 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
     event AssertionAdopterRegistrationRejected(address indexed assertionAdopter, bytes32 indexed projectId);
     event AssertionAdopterAdded(address indexed assertionAdopter, bytes32 indexed projectId);
     event AssertionAdopterDetached(address indexed assertionAdopter, bytes32 indexed projectId);
+    event AssertionAdded(
+        bytes32 indexed projectId,
+        address indexed assertionAdopter,
+        bytes32 indexed assertionId,
+        uint256 activationBlock,
+        uint64 triggerUnits,
+        bytes32 manifestSchemaId,
+        bytes manifestData,
+        IDAVerifier daVerifier,
+        bytes daMetadata,
+        bytes proof
+    );
+    event AssertionRemoved(
+        bytes32 indexed projectId,
+        address indexed assertionAdopter,
+        bytes32 indexed assertionId,
+        uint256 deactivationBlock,
+        uint64 triggerUnits
+    );
+    event StorageReset(address indexed assertionAdopter, bytes32 indexed storageKey, uint256 resetBlock);
     event TriggerManifestValidatorUpdated(
         bytes32 indexed schemaId, ITriggerManifestValidator oldValidator, ITriggerManifestValidator newValidator
     );
@@ -300,6 +349,31 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         emit AssertionAdopterDetached(assertionAdopter, projectId);
     }
 
+    function addAssertion(address assertionAdopter, AssertionArtifact calldata artifact, DAProof calldata daProof)
+        external
+        whenNotPaused
+    {
+        bytes32 projectId = _projectManagedBy(assertionAdopter, msg.sender);
+        _addAssertion(projectId, assertionAdopter, artifact, daProof);
+    }
+
+    function removeAssertion(address assertionAdopter, bytes32 assertionId) external {
+        bytes32 projectId = _projectManagedBy(assertionAdopter, msg.sender);
+        _removeAssertion(projectId, assertionAdopter, assertionId);
+    }
+
+    function removeAssertionByGuardian(address assertionAdopter, bytes32 assertionId) external onlyGuardian {
+        bytes32 projectId = assertionAdopters[assertionAdopter].projectId;
+        require(projectId != bytes32(0), AssertionAdopterNotAssigned());
+        _removeAssertion(projectId, assertionAdopter, assertionId);
+    }
+
+    function resetStorage(address assertionAdopter, bytes32 storageKey) external whenNotPaused {
+        _projectManagedBy(assertionAdopter, msg.sender);
+        ExecutorEventGuard.consume(ExecutorEventGuard.StoreType.StorageReset);
+        emit StorageReset(assertionAdopter, storageKey, _effectiveBlock());
+    }
+
     function pause() external onlyGovernance {
         _pause();
     }
@@ -331,6 +405,10 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         _setTriggerManifestValidator(schemaId, validator);
     }
 
+    function hasAssertion(address assertionAdopter, bytes32 assertionId) external view returns (bool) {
+        return assertions[assertionAdopter][assertionId].enabled;
+    }
+
     function _createProject(bytes32 projectId, address protocolManager) private {
         require(projectId != bytes32(0), InvalidProjectId());
         require(protocolManager != address(0), InvalidProtocolManager());
@@ -346,11 +424,103 @@ contract StateOracleV2 is Batch, Initializable, StateOracleV2AccessControl, Paus
         require(project.status == ProjectStatus.Active, ProjectNotActive());
     }
 
+    function _projectManagedBy(address assertionAdopter, address account) private view returns (bytes32 projectId) {
+        projectId = assertionAdopters[assertionAdopter].projectId;
+        require(projectId != bytes32(0), AssertionAdopterNotAssigned());
+        Project storage project = _activeProject(projectId);
+        require(project.protocolManager == account, UnauthorizedProtocolManager());
+    }
+
     function _clearProjectRetirementRequest(bytes32 projectId) private {
         address requester = projectRetirementRequesters[projectId];
         if (requester == address(0)) return;
         delete projectRetirementRequesters[projectId];
         emit ProjectRetirementCancelled(projectId, requester);
+    }
+
+    function _addAssertion(
+        bytes32 projectId,
+        address assertionAdopter,
+        AssertionArtifact calldata artifact,
+        DAProof calldata daProof
+    ) private {
+        bytes32 assertionId = artifact.deploymentCodeHash;
+        require(assertionId != bytes32(0), InvalidAssertionId());
+        AssertionInstallation storage installation = assertions[assertionAdopter][assertionId];
+        require(!installation.enabled, AssertionAlreadyExists());
+        require(
+            artifact.triggerManifest.data.length <= MAX_MANIFEST_DATA_LENGTH
+                && daProof.metadata.length <= MAX_DA_METADATA_LENGTH && daProof.proof.length <= MAX_DA_PROOF_LENGTH,
+            DataTooLarge()
+        );
+
+        ITriggerManifestValidator validator = triggerManifestValidators[artifact.triggerManifest.schemaId];
+        require(address(validator) != address(0), TriggerManifestValidatorNotRegistered());
+        (, uint64 triggerUnits) = validator.validate(artifact.triggerManifest.schemaId, artifact.triggerManifest.data);
+        require(triggerUnits != 0, InvalidTriggerUnits());
+
+        Project storage project = _activeProject(projectId);
+        uint64 newUsage = project.usedTriggerUnits + triggerUnits;
+        require(newUsage <= project.triggerLimit, TriggerLimitExceeded());
+        require(daVerifiers.isRegistered(daProof.verifier), DAVerifierNotRegistered());
+        require(
+            daProof.verifier.verifyDA(assertionId, daProof.metadata, daProof.proof), InvalidDAProof(daProof.verifier)
+        );
+
+        ExecutorEventGuard.consume(ExecutorEventGuard.StoreType.AssertionLifecycle);
+        bytes32 manifestHash = keccak256(artifact.triggerManifest.data);
+        assertions[assertionAdopter][assertionId] = AssertionInstallation({
+            triggerUnits: triggerUnits,
+            manifestSchemaId: artifact.triggerManifest.schemaId,
+            manifestHash: manifestHash,
+            enabled: true
+        });
+        assertionAdopters[assertionAdopter].assertionCount++;
+        project.usedTriggerUnits = newUsage;
+
+        _emitAssertionAdded(projectId, assertionAdopter, _effectiveBlock(), triggerUnits, artifact, daProof);
+    }
+
+    function _removeAssertion(bytes32 projectId, address assertionAdopter, bytes32 assertionId) private {
+        AssertionInstallation storage installation = assertions[assertionAdopter][assertionId];
+        require(installation.enabled, AssertionDoesNotExist());
+        ExecutorEventGuard.consume(ExecutorEventGuard.StoreType.AssertionLifecycle);
+
+        installation.enabled = false;
+        uint64 deactivationBlock = _effectiveBlock();
+        assertionAdopters[assertionAdopter].assertionCount--;
+        projects[projectId].usedTriggerUnits -= installation.triggerUnits;
+        emit AssertionRemoved(projectId, assertionAdopter, assertionId, deactivationBlock, installation.triggerUnits);
+    }
+
+    function _effectiveBlock() private view returns (uint64 effectiveBlock) {
+        uint256 effectiveBlock256 = block.number + ASSERTION_TIMELOCK_BLOCKS;
+        require(effectiveBlock256 <= type(uint64).max, EffectiveBlockOverflow());
+        // The explicit bound above makes this cast lossless.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        effectiveBlock = uint64(effectiveBlock256);
+    }
+
+    function _emitAssertionAdded(
+        bytes32 projectId,
+        address assertionAdopter,
+        uint256 activationBlock,
+        uint64 triggerUnits,
+        AssertionArtifact calldata artifact,
+        DAProof calldata daProof
+    ) private {
+        emit AssertionAdded(
+            projectId,
+            assertionAdopter,
+            artifact.deploymentCodeHash,
+            activationBlock,
+            triggerUnits,
+            artifact.triggerManifest.schemaId,
+            artifact.triggerManifest.data,
+            daProof.verifier,
+            daProof.metadata,
+            daProof.proof
+        );
     }
 
     function _setTriggerManifestValidator(bytes32 schemaId, ITriggerManifestValidator validator) private {
