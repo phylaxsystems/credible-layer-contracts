@@ -5,26 +5,18 @@ import {StateOracle} from "../src/StateOracle.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
 import {IDAVerifier} from "../src/interfaces/IDAVerifier.sol";
+import {AdminVerifierAlwaysApprove} from "../src/verification/admin/AdminVerifierAlwaysApprove.sol";
 import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.sol";
 import {AdminVerifierWhitelist} from "../src/verification/admin/AdminVerifierWhitelist.sol";
 import {DAVerifierECDSA} from "../src/verification/da/DAVerifierECDSA.sol";
 import {DAVerifierOnChain} from "../src/verification/da/DAVerifierOnChain.sol";
-import {ICreateX, CREATE_X_ADDRESS} from "./ICreateX.sol";
+import {CreateXDeployer} from "./CreateXDeployer.s.sol";
 import {DeployCore} from "./DeployCore.s.sol";
 import {console2} from "forge-std/console2.sol";
 
-contract DeployCoreWithCreateX is DeployCore {
-    string public constant SALT_DA_VERIFIER_ECDSA_NAME = "credible-layer-da-verifier-ecdsa";
-    string public constant SALT_DA_VERIFIER_ONCHAIN_NAME = "credible-layer-da-verifier-onchain";
-    string public constant SALT_ADMIN_VERIFIER_OWNER_NAME = "credible-layer-admin-verifier-owner";
-    string public constant SALT_ADMIN_VERIFIER_WHITELIST_NAME = "credible-layer-admin-verifier-whitelist";
-    string public constant SALT_STATE_ORACLE_NAME = "credible-layer-state-oracle-implementation";
-    string public constant SALT_STATE_ORACLE_PROXY_NAME = "credible-layer-state-oracle-proxy";
-
-    ICreateX internal constant CREATE_X = ICreateX(CREATE_X_ADDRESS);
-
+contract DeployCoreWithCreateX is DeployCore, CreateXDeployer {
     function _deployDAVerifierECDSA() internal override returns (address) {
-        address daVerifier = deployCreate3(
+        address daVerifier = _deployCreate3(
             SALT_DA_VERIFIER_ECDSA_NAME, abi.encodePacked(type(DAVerifierECDSA).creationCode, abi.encode(daProver))
         );
         console2.log("DA Verifier (ECDSA) deployed at", daVerifier);
@@ -32,23 +24,30 @@ contract DeployCoreWithCreateX is DeployCore {
     }
 
     function _deployDAVerifierOnChain() internal override returns (address) {
-        address daVerifierOnChain = deployCreate3(SALT_DA_VERIFIER_ONCHAIN_NAME, type(DAVerifierOnChain).creationCode);
+        address daVerifierOnChain = _deployCreate3(SALT_DA_VERIFIER_ONCHAIN_NAME, type(DAVerifierOnChain).creationCode);
         console2.log("DA Verifier (OnChain) deployed at", daVerifierOnChain);
         return daVerifierOnChain;
     }
 
     function _deployOwnerAdminVerifier() internal override returns (address verifier) {
-        verifier = deployCreate3(SALT_ADMIN_VERIFIER_OWNER_NAME, type(AdminVerifierOwner).creationCode);
+        verifier = _deployCreate3(SALT_ADMIN_VERIFIER_OWNER_NAME, type(AdminVerifierOwner).creationCode);
         console2.log("Admin Verifier (Owner) deployed at", verifier);
         return verifier;
     }
 
     function _deployWhitelistAdminVerifier() internal override returns (address verifier) {
-        verifier = deployCreate3(
+        verifier = _deployCreate3(
             SALT_ADMIN_VERIFIER_WHITELIST_NAME,
             abi.encodePacked(type(AdminVerifierWhitelist).creationCode, abi.encode(whitelistAdmin))
         );
         console2.log("Admin Verifier (Whitelist) deployed at", verifier);
+        return verifier;
+    }
+
+    function _deployAlwaysApproveAdminVerifier() internal override returns (address verifier) {
+        verifier =
+            _deployCreate3(SALT_ADMIN_VERIFIER_ALWAYS_APPROVE_NAME, type(AdminVerifierAlwaysApprove).creationCode);
+        console2.log("Testing Admin Verifier (Always Approve) deployed at", verifier);
         return verifier;
     }
 
@@ -57,12 +56,19 @@ contract DeployCoreWithCreateX is DeployCore {
         override
         returns (address)
     {
-        address stateOracle = deployCreate3(
-            SALT_STATE_ORACLE_NAME,
-            abi.encodePacked(type(StateOracle).creationCode, abi.encode(assertionTimelockBlocks))
+        address stateOracle = _deployStateOracleWithSalt(assertionTimelockBlocks, contractName, SALT_STATE_ORACLE_NAME);
+        return stateOracle;
+    }
+
+    function _deployStateOracleWithSalt(
+        uint256 assertionTimelockBlocks,
+        string memory contractName,
+        string memory saltName
+    ) internal returns (address stateOracle) {
+        stateOracle = _deployCreate3(
+            saltName, abi.encodePacked(type(StateOracle).creationCode, abi.encode(assertionTimelockBlocks))
         );
         console2.log(string.concat(contractName, " Implementation deployed at"), stateOracle);
-        return stateOracle;
     }
 
     function _deployStateOracleProxy(
@@ -71,6 +77,46 @@ contract DeployCoreWithCreateX is DeployCore {
         address[] memory daVerifierAddresses,
         uint16 maxAssertions
     ) internal override returns (address) {
+        return _deployStateOracleProxyWithSalt(
+            stateOracle,
+            adminVerifierDeployments,
+            daVerifierAddresses,
+            maxAssertions,
+            SALT_STATE_ORACLE_PROXY_NAME,
+            "State Oracle"
+        );
+    }
+
+    function _deployStateOracleProxyWithSalt(
+        address stateOracle,
+        address[] memory adminVerifierDeployments,
+        address[] memory daVerifierAddresses,
+        uint16 maxAssertions,
+        string memory saltName,
+        string memory contractName
+    ) internal returns (address proxyAddress) {
+        return _deployStateOracleProxyWithConfig(
+            stateOracle,
+            adminVerifierDeployments,
+            daVerifierAddresses,
+            maxAssertions,
+            stateOracleWhitelistEnabled,
+            new address[](0),
+            saltName,
+            contractName
+        );
+    }
+
+    function _deployStateOracleProxyWithConfig(
+        address stateOracle,
+        address[] memory adminVerifierDeployments,
+        address[] memory daVerifierAddresses,
+        uint16 maxAssertions,
+        bool whitelistEnabled,
+        address[] memory initialWhitelist,
+        string memory saltName,
+        string memory contractName
+    ) internal returns (address proxyAddress) {
         IAdminVerifier[] memory adminVerifiers = new IAdminVerifier[](adminVerifierDeployments.length);
         for (uint256 i = 0; i < adminVerifierDeployments.length; i++) {
             adminVerifiers[i] = IAdminVerifier(adminVerifierDeployments[i]);
@@ -79,27 +125,16 @@ contract DeployCoreWithCreateX is DeployCore {
         for (uint256 i = 0; i < daVerifierAddresses.length; i++) {
             daVfrs[i] = IDAVerifier(daVerifierAddresses[i]);
         }
-        bytes memory initCallData =
-            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, daVfrs, maxAssertions);
-        address proxyAddress = deployCreate3(
-            SALT_STATE_ORACLE_PROXY_NAME,
+        bytes memory initCallData = abi.encodeCall(
+            StateOracle.initializeWithWhitelist,
+            (admin, adminVerifiers, daVfrs, maxAssertions, whitelistEnabled, initialWhitelist)
+        );
+        proxyAddress = _deployCreate3(
+            saltName,
             abi.encodePacked(
                 type(TransparentUpgradeableProxy).creationCode, abi.encode(address(stateOracle), admin, initCallData)
             )
         );
-        console2.log("State Oracle Proxy deployed at", proxyAddress);
-        return proxyAddress;
-    }
-
-    function deployCreate3(string memory name, bytes memory initCode) private returns (address) {
-        bytes32 salt = generateCreateXSalt(msg.sender, name);
-        return CREATE_X.deployCreate3(salt, initCode);
-    }
-
-    // Set salt with frontrunning protection, i.e. first 20 bytes = deployer;
-    // 0 byte to switch off cross-chain redeploy protection; 11 bytes salt
-    // Details: https://github.com/pcaversaccio/createx#permissioned-deploy-protection-and-cross-chain-redeploy-protection
-    function generateCreateXSalt(address sender, string memory name) internal pure returns (bytes32) {
-        return bytes32(abi.encodePacked(sender, hex"00", bytes11(keccak256(bytes(name)))));
+        console2.log(string.concat(contractName, " Proxy deployed at"), proxyAddress);
     }
 }

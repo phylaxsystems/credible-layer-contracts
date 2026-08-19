@@ -86,6 +86,9 @@ contract Constructor is StateOracleBase {
 }
 
 contract Initialize is StateOracleBase {
+    address constant INITIAL_WHITELIST_ACCOUNT = address(0xBEEF);
+    IDAVerifier additionalDAVerifier;
+
     function test_RevertIf_alreadyInitialized() public {
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         stateOracle.initialize(OWNER, new IAdminVerifier[](0), new IDAVerifier[](0), MAX_ASSERTIONS_PER_AA);
@@ -101,6 +104,45 @@ contract Initialize is StateOracleBase {
         daVerifiers[0] = daVerifierMock;
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         stateOracle.initialize(STATE_ORACLE_ADMIN, verifiers, daVerifiers, MAX_ASSERTIONS_PER_AA);
+    }
+
+    function test_initializeWithWhitelistEnabledAndInitialAccount() public {
+        address[] memory initialWhitelist = new address[](1);
+        initialWhitelist[0] = INITIAL_WHITELIST_ACCOUNT;
+
+        StateOracle configuredOracle = _deployWithWhitelist(true, initialWhitelist);
+
+        assertTrue(configuredOracle.whitelistEnabled());
+        assertTrue(configuredOracle.whitelist(INITIAL_WHITELIST_ACCOUNT));
+        assertTrue(configuredOracle.isWhitelisted(INITIAL_WHITELIST_ACCOUNT));
+        assertFalse(configuredOracle.isWhitelisted(address(0xCAFE)));
+        assertTrue(configuredOracle.isDAVerifierRegistered(daVerifierMock));
+        assertTrue(configuredOracle.isDAVerifierRegistered(additionalDAVerifier));
+    }
+
+    function test_initializeWithWhitelistDisabled() public {
+        StateOracle configuredOracle = _deployWithWhitelist(false, new address[](0));
+
+        assertFalse(configuredOracle.whitelistEnabled());
+        assertTrue(configuredOracle.isWhitelisted(address(0xCAFE)));
+    }
+
+    function _deployWithWhitelist(bool enabled, address[] memory initialWhitelist)
+        internal
+        returns (StateOracle configuredOracle)
+    {
+        StateOracle implementation = new StateOracle(TIMEOUT);
+        IAdminVerifier[] memory verifiers = new IAdminVerifier[](1);
+        verifiers[0] = adminVerifier;
+        additionalDAVerifier = IDAVerifier(address(new DAVerifierMock()));
+        IDAVerifier[] memory daVerifiers = new IDAVerifier[](2);
+        daVerifiers[0] = daVerifierMock;
+        daVerifiers[1] = additionalDAVerifier;
+        bytes memory data = abi.encodeCall(
+            StateOracle.initializeWithWhitelist,
+            (STATE_ORACLE_ADMIN, verifiers, daVerifiers, MAX_ASSERTIONS_PER_AA, enabled, initialWhitelist)
+        );
+        configuredOracle = StateOracle(deployProxy(address(implementation), data));
     }
 }
 

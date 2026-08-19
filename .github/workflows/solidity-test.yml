@@ -113,3 +113,13 @@ jobs:
             *) echo "::error title=Storage layout check failed to run::shell/check_storage_layout.sh could not inspect the contract."
                exit 1 ;;
           esac
+
+  deploy-wizard:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test deployment wizard
+        run: python3 test/shell/test_deploy_wizard.py
