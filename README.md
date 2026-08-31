@@ -181,12 +181,12 @@ repository. Pin a commit rather than a branch or tag:
 credible-layer-contracts = { git = "https://github.com/phylaxsystems/credible-layer-contracts.git", rev = "<commit>" }
 ```
 
-Both forms expose the first interface generation as
-`credible_layer_contracts::state_oracle::v1::IStateOracleV1`. Interface
-generations are independent from repository tags: `0.3.0` first publishes
-`IStateOracleV1`, while a future breaking change will add `IStateOracleV2`
-rather than replace V1. The committed ABI snapshots allow git consumers to
-build without installing Foundry or initializing submodules.
+Both forms expose the historical `0.2.0` interface as
+`credible_layer_contracts::state_oracle::v1::IStateOracleV1` and the current
+`0.3.0` interface as `credible_layer_contracts::state_oracle::v2::IStateOracleV2`.
+Future breaking changes add another interface generation rather than replacing
+an existing one. The committed ABI snapshots allow git consumers to build
+without installing Foundry or initializing submodules.
 
 ### Solidity development
 

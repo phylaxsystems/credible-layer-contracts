@@ -6,21 +6,8 @@
     "outputs": [
       {
         "name": "",
-        "type": "uint128",
-        "internalType": "uint128"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "DA_VERIFIER",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IDAVerifier"
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -151,6 +138,11 @@
         "internalType": "bytes32"
       },
       {
+        "name": "daVerifier",
+        "type": "address",
+        "internalType": "contract IDAVerifier"
+      },
+      {
         "name": "metadata",
         "type": "bytes",
         "internalType": "bytes"
@@ -159,6 +151,19 @@
         "name": "proof",
         "type": "bytes",
         "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "addDAVerifier",
+    "inputs": [
+      {
+        "name": "daVerifier",
+        "type": "address",
+        "internalType": "contract IDAVerifier"
       }
     ],
     "outputs": [],
@@ -240,6 +245,25 @@
   },
   {
     "type": "function",
+    "name": "daVerifiers",
+    "inputs": [
+      {
+        "name": "daVerifier",
+        "type": "address",
+        "internalType": "contract IDAVerifier"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "isRegistered",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "disableWhitelist",
     "inputs": [],
     "outputs": [],
@@ -289,13 +313,13 @@
     "outputs": [
       {
         "name": "activationBlock",
-        "type": "uint128",
-        "internalType": "uint128"
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
         "name": "deactivationBlock",
-        "type": "uint128",
-        "internalType": "uint128"
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -503,9 +527,52 @@
         "internalType": "contract IAdminVerifier[]"
       },
       {
+        "name": "_daVerifiers",
+        "type": "address[]",
+        "internalType": "contract IDAVerifier[]"
+      },
+      {
         "name": "_maxAssertionsPerAA",
         "type": "uint16",
         "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "initializeWithWhitelist",
+    "inputs": [
+      {
+        "name": "admin",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_adminVerifiers",
+        "type": "address[]",
+        "internalType": "contract IAdminVerifier[]"
+      },
+      {
+        "name": "_daVerifiers",
+        "type": "address[]",
+        "internalType": "contract IDAVerifier[]"
+      },
+      {
+        "name": "_maxAssertionsPerAA",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "_whitelistEnabled",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "_initialWhitelist",
+        "type": "address[]",
+        "internalType": "address[]"
       }
     ],
     "outputs": [],
@@ -519,6 +586,25 @@
         "name": "adminVerifier",
         "type": "address",
         "internalType": "contract IAdminVerifier"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "isRegistered",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isDAVerifierRegistered",
+    "inputs": [
+      {
+        "name": "daVerifier",
+        "type": "address",
+        "internalType": "contract IDAVerifier"
       }
     ],
     "outputs": [
@@ -662,6 +748,19 @@
   },
   {
     "type": "function",
+    "name": "removeDAVerifier",
+    "inputs": [
+      {
+        "name": "daVerifier",
+        "type": "address",
+        "internalType": "contract IDAVerifier"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "removeFromWhitelist",
     "inputs": [
       {
@@ -693,6 +792,24 @@
         "name": "callerConfirmation",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "resetStorage",
+    "inputs": [
+      {
+        "name": "adopter",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "storageKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [],
@@ -935,13 +1052,13 @@
       {
         "name": "assertionAdopter",
         "type": "address",
-        "indexed": false,
+        "indexed": true,
         "internalType": "address"
       },
       {
         "name": "assertionId",
         "type": "bytes32",
-        "indexed": false,
+        "indexed": true,
         "internalType": "bytes32"
       },
       {
@@ -949,6 +1066,24 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      },
+      {
+        "name": "daVerifier",
+        "type": "address",
+        "indexed": true,
+        "internalType": "contract IDAVerifier"
+      },
+      {
+        "name": "metadata",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      },
+      {
+        "name": "proof",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
       }
     ],
     "anonymous": false
@@ -985,13 +1120,13 @@
       {
         "name": "assertionAdopter",
         "type": "address",
-        "indexed": false,
+        "indexed": true,
         "internalType": "address"
       },
       {
         "name": "assertionId",
         "type": "bytes32",
-        "indexed": false,
+        "indexed": true,
         "internalType": "bytes32"
       },
       {
@@ -999,6 +1134,32 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "DAVerifierAdded",
+    "inputs": [
+      {
+        "name": "daVerifier",
+        "type": "address",
+        "indexed": false,
+        "internalType": "contract IDAVerifier"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "DAVerifierRemoved",
+    "inputs": [
+      {
+        "name": "daVerifier",
+        "type": "address",
+        "indexed": false,
+        "internalType": "contract IDAVerifier"
       }
     ],
     "anonymous": false
@@ -1188,6 +1349,31 @@
   },
   {
     "type": "event",
+    "name": "StorageReset",
+    "inputs": [
+      {
+        "name": "adopter",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "storageKey",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "resetBlock",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "WhitelistDisabled",
     "inputs": [],
     "anonymous": false
@@ -1304,8 +1490,29 @@
   },
   {
     "type": "error",
+    "name": "DAVerifierAlreadyRegistered",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DAVerifierNotRegistered",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidAssertionTimelock",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidDAProof",
+    "inputs": [
+      {
+        "name": "daVerifier",
+        "type": "address",
+        "internalType": "contract IDAVerifier"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1315,11 +1522,6 @@
   {
     "type": "error",
     "name": "InvalidManagerTransferRequest",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidProof",
     "inputs": []
   },
   {

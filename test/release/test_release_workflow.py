@@ -17,7 +17,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
         generation_index = artifact_job.index("run: ./shell/create_artifacts.sh")
         verification_index = artifact_job.index(
-            "run: git diff --exit-code -- bindings/rust/abi/IStateOracleV1.json"
+            "run: git diff --exit-code -- bindings/rust/abi/IStateOracleV1.json bindings/rust/abi/IStateOracleV2.json"
         )
         upload_index = artifact_job.index("uses: actions/upload-artifact@")
 
@@ -119,7 +119,8 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("uses: actions/checkout@", verify_job)
         self.assertIn("uses: actions/download-artifact@", verify_job)
         self.assertIn("name: credible-layer-contracts-artifacts", verify_job)
-        self.assertIn("cmp -s artifacts/interfaces/IStateOracleV1.json", verify_job)
+        self.assertIn("for interface in IStateOracleV1 IStateOracleV2", verify_job)
+        self.assertIn('cmp -s "artifacts/interfaces/${interface}.json"', verify_job)
         self.assertIn(
             "cargo publish --manifest-path bindings/rust/Cargo.toml --dry-run",
             verify_job,
@@ -257,6 +258,47 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
         self.assertIn('bindings/rust/abi', script)
         self.assertIn('cp "${INTERFACES}/IStateOracleV1.json"', script)
+        self.assertIn('cp "${INTERFACES}/IStateOracleV2.json"', script)
+
+    def test_state_oracle_release_mapping_preserves_supported_abis(self):
+        readme = (ROOT / "bindings" / "rust" / "README.md").read_text()
+        rust_source = (ROOT / "bindings" / "rust" / "src" / "lib.rs").read_text()
+
+        self.assertIn(
+            "| `0.2.0` | `IStateOracleV1` | `state_oracle::v1` |", readme
+        )
+        self.assertIn(
+            "| `0.3.0` | `IStateOracleV2` | `state_oracle::v2` |", readme
+        )
+        self.assertIn("pub mod v1", rust_source)
+        self.assertIn("pub mod v2", rust_source)
+
+    def test_cargo_package_includes_every_supported_state_oracle_abi(self):
+        with (ROOT / "bindings" / "rust" / "Cargo.toml").open("rb") as manifest:
+            included_files = tomllib.load(manifest)["package"]["include"]
+
+        self.assertIn("abi/IStateOracleV1.json", included_files)
+        self.assertIn("abi/IStateOracleV2.json", included_files)
+
+    def test_gas_snapshot_uses_a_pinned_foundry_version(self):
+        workflow = (ROOT / ".github" / "workflows" / "solidity-test.yml").read_text()
+        solidity_job = workflow.split("  solidity-base:\n", 1)[1].split(
+            "  gas-snapshot:\n", 1
+        )[0]
+        gas_job = workflow.split("  gas-snapshot:\n", 1)[1].split(
+            "  contract-compatibility:\n", 1
+        )[0]
+
+        self.assertIn("disable-gas-snapshot: true", solidity_job)
+        self.assertRegex(gas_job, r"version: v\d+\.\d+\.\d+")
+        self.assertNotIn("version: nightly", gas_job)
+        self.assertNotIn("version: stable", gas_job)
+        self.assertIn("forge snapshot --check --silent --tolerance 25", gas_job)
+
+    def test_solidity_compiler_version_is_pinned(self):
+        foundry_config = (ROOT / "foundry.toml").read_text()
+
+        self.assertRegex(foundry_config, r'(?m)^solc = "\d+\.\d+\.\d+"$')
 
     def test_package_requests_provenance(self):
         package = json.loads((ROOT / "package.json").read_text())

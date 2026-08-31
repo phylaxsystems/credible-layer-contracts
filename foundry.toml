@@ -2,6 +2,7 @@
 src = "src"
 out = "out"
 libs = ["lib"]
+solc = "0.8.36"
 # Without this, `forge inspect ... storage-layout` adds storageLayout to the
 # output selection and invalidates the build cache, so the next `forge build`
 # recompiles every file (3.26s vs 0.11s).

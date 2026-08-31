@@ -4,11 +4,11 @@ pragma solidity ^0.8.28;
 import {IAdminVerifier} from "./IAdminVerifier.sol";
 import {IDAVerifier} from "./IDAVerifier.sol";
 
-/// @title IStateOracleV1
-/// @notice Historical StateOracle consumer interface released as 0.2.0.
-/// @dev This interface is immutable. It remains available for consumers of 0.2.0 deployments;
-/// breaking changes introduced in 0.3.0 are represented by IStateOracleV2.
-interface IStateOracleV1 {
+/// @title IStateOracleV2
+/// @notice Canonical consumer interface for the StateOracle ABI introduced in release 0.3.0.
+/// @dev This interface is the source for published bindings. Breaking changes require a new
+/// interface generation; release tags are mapped to interface generations in the bindings README.
+interface IStateOracleV2 {
     error AccessControlBadConfirmation();
     error AccessControlUnauthorizedAccount(address account, bytes32 neededRole);
     error AccountNotWhitelisted(address account);
@@ -24,10 +24,12 @@ interface IStateOracleV1 {
     error CannotGrantDefaultAdminRole();
     error CannotRenounceOwnerDefaultAdminRole();
     error CannotRevokeOwnerDefaultAdminRole();
+    error DAVerifierAlreadyRegistered();
+    error DAVerifierNotRegistered();
     error InvalidAssertionTimelock();
+    error InvalidDAProof(IDAVerifier daVerifier);
     error InvalidInitialization();
     error InvalidManagerTransferRequest();
-    error InvalidProof();
     error NoPendingManager();
     error NotInitializing();
     error NotWhitelisted();
@@ -42,9 +44,18 @@ interface IStateOracleV1 {
     event AddedToWhitelist(address indexed account);
     event AdminVerifierAdded(IAdminVerifier adminVerifier);
     event AdminVerifierRemoved(IAdminVerifier adminVerifier);
-    event AssertionAdded(address assertionAdopter, bytes32 assertionId, uint256 activationBlock);
+    event AssertionAdded(
+        address indexed assertionAdopter,
+        bytes32 indexed assertionId,
+        uint256 activationBlock,
+        IDAVerifier indexed daVerifier,
+        bytes metadata,
+        bytes proof
+    );
     event AssertionAdopterAdded(address indexed contractAddress, address indexed manager, IAdminVerifier adminVerifier);
-    event AssertionRemoved(address assertionAdopter, bytes32 assertionId, uint256 deactivationBlock);
+    event AssertionRemoved(address indexed assertionAdopter, bytes32 indexed assertionId, uint256 deactivationBlock);
+    event DAVerifierAdded(IDAVerifier daVerifier);
+    event DAVerifierRemoved(IDAVerifier daVerifier);
     event Initialized(uint64 version);
     event ManagerTransferRequested(
         address indexed contractAddress, address indexed manager, address indexed newManager
@@ -56,11 +67,11 @@ interface IStateOracleV1 {
     event RoleAdminChanged(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole);
     event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);
     event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
+    event StorageReset(address indexed adopter, bytes32 indexed storageKey, uint256 resetBlock);
     event WhitelistDisabled();
     event WhitelistEnabled();
 
-    function ASSERTION_TIMELOCK_BLOCKS() external view returns (uint128);
-    function DA_VERIFIER() external view returns (IDAVerifier);
+    function ASSERTION_TIMELOCK_BLOCKS() external view returns (uint256);
     function DEFAULT_ADMIN_ROLE() external view returns (bytes32);
     function GOVERNANCE_ROLE() external view returns (bytes32);
     function GUARDIAN_ADMIN_ROLE() external view returns (bytes32);
@@ -70,8 +81,14 @@ interface IStateOracleV1 {
     function acceptManagerTransfer(address contractAddress) external;
     function acceptOwnership() external;
     function addAdminVerifier(IAdminVerifier adminVerifier) external;
-    function addAssertion(address contractAddress, bytes32 assertionId, bytes calldata metadata, bytes calldata proof)
-        external;
+    function addAssertion(
+        address contractAddress,
+        bytes32 assertionId,
+        IDAVerifier daVerifier,
+        bytes calldata metadata,
+        bytes calldata proof
+    ) external;
+    function addDAVerifier(IDAVerifier daVerifier) external;
     function addToWhitelist(address account) external;
     function adminVerifiers(IAdminVerifier adminVerifier) external view returns (bool isRegistered);
     function assertionAdopters(address)
@@ -79,13 +96,14 @@ interface IStateOracleV1 {
         view
         returns (address manager, address pendingManager, uint16 assertionCount);
     function batch(bytes[] calldata calls) external;
+    function daVerifiers(IDAVerifier daVerifier) external view returns (bool isRegistered);
     function disableWhitelist() external;
     function enableWhitelist() external;
     function getAssertionCount(address contractAddress) external view returns (uint16 assertionCount);
     function getAssertionWindow(address contractAddress, bytes32 assertionId)
         external
         view
-        returns (uint128 activationBlock, uint128 deactivationBlock);
+        returns (uint256 activationBlock, uint256 deactivationBlock);
     function getManager(address contractAddress) external view returns (address manager);
     function getPendingManager(address contractAddress) external view returns (address pendingManager);
     function getRoleAdmin(bytes32 role) external view returns (bytes32);
@@ -97,8 +115,22 @@ interface IStateOracleV1 {
     function grantRole(bytes32 role, address account) external;
     function hasAssertion(address contractAddress, bytes32 assertionId) external view returns (bool isAssociated);
     function hasRole(bytes32 role, address account) external view returns (bool);
-    function initialize(address admin, IAdminVerifier[] calldata _adminVerifiers, uint16 _maxAssertionsPerAA) external;
+    function initialize(
+        address admin,
+        IAdminVerifier[] calldata _adminVerifiers,
+        IDAVerifier[] calldata _daVerifiers,
+        uint16 _maxAssertionsPerAA
+    ) external;
+    function initializeWithWhitelist(
+        address admin,
+        IAdminVerifier[] calldata _adminVerifiers,
+        IDAVerifier[] calldata _daVerifiers,
+        uint16 _maxAssertionsPerAA,
+        bool _whitelistEnabled,
+        address[] calldata _initialWhitelist
+    ) external;
     function isAdminVerifierRegistered(IAdminVerifier adminVerifier) external view returns (bool isRegistered);
+    function isDAVerifierRegistered(IDAVerifier daVerifier) external view returns (bool isRegistered);
     function isWhitelisted(address account) external view returns (bool);
     function maxAssertionsPerAA() external view returns (uint16);
     function owner() external view returns (address);
@@ -108,9 +140,11 @@ interface IStateOracleV1 {
     function removeAdminVerifier(IAdminVerifier adminVerifier) external;
     function removeAssertion(address contractAddress, bytes32 assertionId) external;
     function removeAssertionByGuardian(address contractAddress, bytes32 assertionId) external;
+    function removeDAVerifier(IDAVerifier daVerifier) external;
     function removeFromWhitelist(address account) external;
     function renounceOwnership() external;
     function renounceRole(bytes32 role, address callerConfirmation) external;
+    function resetStorage(address adopter, bytes32 storageKey) external;
     function revokeGovernanceRole(address governance) external;
     function revokeGuardianAdminRole(address guardianAdmin) external;
     function revokeGuardianRole(address guardian) external;

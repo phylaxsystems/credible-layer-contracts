@@ -12,19 +12,20 @@ cargo add credible-layer-contracts
 ```
 
 ```rust
-use credible_layer_contracts::state_oracle::v1::IStateOracleV1;
+use credible_layer_contracts::state_oracle::v2::IStateOracleV2;
 ```
 
 ## Interface compatibility
 
-Interface generations are independent from repository release versions. An
-existing generation may grow additively, but a breaking ABI change introduces
-a new Solidity interface and Rust module. Published generations remain
-available so consumers can select the interface used by their deployment.
+Interface generations are independent from repository release versions. The
+active generation may grow additively, but a breaking ABI change introduces a
+new Solidity interface and Rust module. Superseded generations are frozen and
+remain available so consumers can select the interface used by their deployment.
 
-| First release | Solidity interface | Rust module |
+| Contract release | Solidity interface | Rust module |
 | --- | --- | --- |
-| `0.3.0` | `IStateOracleV1` | `state_oracle::v1` |
+| `0.2.0` | `IStateOracleV1` | `state_oracle::v1` |
+| `0.3.0` | `IStateOracleV2` | `state_oracle::v2` |
 
 Do not edit files under `abi/` by hand. Run `./shell/create_artifacts.sh` from
 the repository root and review the resulting ABI changes.

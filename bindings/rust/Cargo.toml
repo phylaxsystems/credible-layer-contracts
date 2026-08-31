@@ -14,6 +14,7 @@ publish = ["crates-io"]
 include = [
     "src/**",
     "abi/IStateOracleV1.json",
+    "abi/IStateOracleV2.json",
     "README.md",
     "RELEASING.md",
     "LICENSE-MIT",

@@ -27,4 +27,4 @@ tagged:
 
 Use `./shell/bump-version.sh patch|minor|major`, review the resulting commit and
 tag, then push both. The release fails before publishing if the npm version,
-Cargo version, tag, or committed versioned interface ABI disagree.
+Cargo version, tag, or committed versioned interface ABIs disagree.
