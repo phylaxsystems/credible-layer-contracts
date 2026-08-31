@@ -2,6 +2,10 @@
 src = "src"
 out = "out"
 libs = ["lib"]
+# Without this, `forge inspect ... storage-layout` adds storageLayout to the
+# output selection and invalidates the build cache, so the next `forge build`
+# recompiles every file (3.26s vs 0.11s).
+extra_output = ["storageLayout"]
 
 [lint]
 exclude_lints = ["mixed-case-function", "mixed-case-variable"]
