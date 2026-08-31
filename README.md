@@ -166,7 +166,7 @@ Every broadcast entrypoint in `DeployTestingAdminVerifiers.s.sol` likewise requi
 
 ### Rust bindings
 
-Each tagged release publishes the StateOracle ABI as the
+Each tagged release publishes versioned StateOracle interface bindings as the
 `credible-layer-contracts` Cargo crate. Registry consumers can install it with:
 
 ```bash
@@ -181,9 +181,12 @@ repository. Pin a commit rather than a branch or tag:
 credible-layer-contracts = { git = "https://github.com/phylaxsystems/credible-layer-contracts.git", rev = "<commit>" }
 ```
 
-Both forms expose the generated binding as
-`credible_layer_contracts::StateOracle`. The committed ABI snapshot allows git
-consumers to build without installing Foundry or initializing submodules.
+Both forms expose the first interface generation as
+`credible_layer_contracts::state_oracle::v1::IStateOracleV1`. Interface
+generations are independent from repository tags: `0.3.0` first publishes
+`IStateOracleV1`, while a future breaking change will add `IStateOracleV2`
+rather than replace V1. The committed ABI snapshots allow git consumers to
+build without installing Foundry or initializing submodules.
 
 ### Solidity development
 

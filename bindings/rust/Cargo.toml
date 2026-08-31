@@ -13,7 +13,7 @@ keywords = ["ethereum", "solidity", "abi", "bindings", "credible-layer"]
 publish = ["crates-io"]
 include = [
     "src/**",
-    "abi/StateOracle.json",
+    "abi/IStateOracleV1.json",
     "README.md",
     "RELEASING.md",
     "LICENSE-MIT",

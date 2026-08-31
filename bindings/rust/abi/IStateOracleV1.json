@@ -1,16 +1,5 @@
 [
   {
-    "type": "constructor",
-    "inputs": [
-      {
-        "name": "assertionTimelockBlocks",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
     "type": "function",
     "name": "ASSERTION_TIMELOCK_BLOCKS",
     "inputs": [],
@@ -546,6 +535,44 @@
         "name": "_maxAssertionsPerAA",
         "type": "uint16",
         "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "initializeWithWhitelist",
+    "inputs": [
+      {
+        "name": "admin",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_adminVerifiers",
+        "type": "address[]",
+        "internalType": "contract IAdminVerifier[]"
+      },
+      {
+        "name": "_daVerifiers",
+        "type": "address[]",
+        "internalType": "contract IDAVerifier[]"
+      },
+      {
+        "name": "_maxAssertionsPerAA",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "_whitelistEnabled",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "_initialWhitelist",
+        "type": "address[]",
+        "internalType": "address[]"
       }
     ],
     "outputs": [],
@@ -1464,11 +1491,6 @@
   {
     "type": "error",
     "name": "DAVerifierAlreadyRegistered",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "DAVerifierNotRegistered",
     "inputs": []
   },
   {

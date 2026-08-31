@@ -30,7 +30,7 @@ jobs:
       - name: Verify generated ABI and Cargo package
         run: |
           ./shell/create_artifacts.sh
-          git diff --exit-code -- bindings/rust/abi/StateOracle.json
+          git diff --exit-code -- bindings/rust/abi/IStateOracleV1.json
           cargo fmt --manifest-path bindings/rust/Cargo.toml -- --check
           cargo clippy --manifest-path bindings/rust/Cargo.toml --all-targets -- -D warnings -D clippy::pedantic
           cargo test --manifest-path bindings/rust/Cargo.toml

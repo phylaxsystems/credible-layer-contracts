@@ -22,7 +22,7 @@ jobs:
       - name: Create artifacts
         run: ./shell/create_artifacts.sh
       - name: Verify committed Rust ABI
-        run: git diff --exit-code -- bindings/rust/abi/StateOracle.json
+        run: git diff --exit-code -- bindings/rust/abi/IStateOracleV1.json
       - name: Upload artifact directory
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -139,9 +139,9 @@ jobs:
             echo "::error::npm version ${npm_version} does not match tag ${GITHUB_REF_NAME}"
             exit 1
           fi
-          if ! cmp -s artifacts/StateOracle.json bindings/rust/abi/StateOracle.json; then
+          if ! cmp -s artifacts/interfaces/IStateOracleV1.json bindings/rust/abi/IStateOracleV1.json; then
             echo "::error::Committed Rust ABI differs from the release artifact"
-            diff -u bindings/rust/abi/StateOracle.json artifacts/StateOracle.json || true
+            diff -u bindings/rust/abi/IStateOracleV1.json artifacts/interfaces/IStateOracleV1.json || true
             exit 1
           fi
 

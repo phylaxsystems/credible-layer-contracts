@@ -17,7 +17,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
         generation_index = artifact_job.index("run: ./shell/create_artifacts.sh")
         verification_index = artifact_job.index(
-            "run: git diff --exit-code -- bindings/rust/abi/StateOracle.json"
+            "run: git diff --exit-code -- bindings/rust/abi/IStateOracleV1.json"
         )
         upload_index = artifact_job.index("uses: actions/upload-artifact@")
 
@@ -119,7 +119,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("uses: actions/checkout@", verify_job)
         self.assertIn("uses: actions/download-artifact@", verify_job)
         self.assertIn("name: credible-layer-contracts-artifacts", verify_job)
-        self.assertIn("cmp -s artifacts/StateOracle.json", verify_job)
+        self.assertIn("cmp -s artifacts/interfaces/IStateOracleV1.json", verify_job)
         self.assertIn(
             "cargo publish --manifest-path bindings/rust/Cargo.toml --dry-run",
             verify_job,
@@ -256,7 +256,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         script = (ROOT / "shell" / "create_artifacts.sh").read_text()
 
         self.assertIn('bindings/rust/abi', script)
-        self.assertIn('cp "${ARTIFACTS}/StateOracle.json"', script)
+        self.assertIn('cp "${INTERFACES}/IStateOracleV1.json"', script)
 
     def test_package_requests_provenance(self):
         package = json.loads((ROOT / "package.json").read_text())
