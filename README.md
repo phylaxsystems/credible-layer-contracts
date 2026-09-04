@@ -166,22 +166,15 @@ Every broadcast entrypoint in `DeployTestingAdminVerifiers.s.sol` likewise requi
 
 ### Rust bindings
 
-Each tagged release publishes versioned StateOracle interface bindings as the
-`credible-layer-contracts` Cargo crate. Registry consumers can install it with:
-
-```bash
-cargo add credible-layer-contracts
-```
-
-For an unreleased revision, Cargo can resolve the crate directly from this
-repository. Pin a commit rather than a branch or tag:
+Cargo can resolve the versioned StateOracle interface bindings directly from
+this repository. Pin a commit rather than a branch or tag:
 
 ```toml
 [dependencies]
 credible-layer-contracts = { git = "https://github.com/phylaxsystems/credible-layer-contracts.git", rev = "<commit>" }
 ```
 
-Both forms expose the historical `0.2.0` interface as
+The dependency exposes the historical `0.2.0` interface as
 `credible_layer_contracts::state_oracle::v1::IStateOracleV1` and the current
 `0.3.0` interface as `credible_layer_contracts::state_oracle::v2::IStateOracleV2`.
 Future breaking changes add another interface generation rather than replacing

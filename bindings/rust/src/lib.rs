@@ -1,8 +1,8 @@
 //! Alloy bindings for the Credible Layer protocol contracts.
 //!
 //! Versioned ABI snapshots are generated from canonical Solidity interfaces by
-//! the repository's artifact pipeline. They are committed so registry and git
-//! consumers do not need Foundry or submodules.
+//! the repository's artifact pipeline. They are committed so git consumers do
+//! not need Foundry or submodules.
 
 /// `StateOracle` bindings grouped by interface generation.
 pub mod state_oracle {

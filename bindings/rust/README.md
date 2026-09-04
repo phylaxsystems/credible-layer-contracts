@@ -5,10 +5,12 @@ Alloy Rust bindings for the versioned consumer interfaces maintained in
 
 The crate version follows the repository's contract release version. Its ABI
 snapshots are generated from the same canonical Solidity interfaces published
-in the `@phylax-systems/credible-layer-contracts` npm package.
+in the `@phylax-systems/credible-layer-contracts` npm package. Consume it
+directly from this repository and pin an exact commit:
 
-```bash
-cargo add credible-layer-contracts
+```toml
+[dependencies]
+credible-layer-contracts = { git = "https://github.com/phylaxsystems/credible-layer-contracts.git", rev = "<commit>" }
 ```
 
 ```rust
@@ -29,6 +31,3 @@ remain available so consumers can select the interface used by their deployment.
 
 Do not edit files under `abi/` by hand. Run `./shell/create_artifacts.sh` from
 the repository root and review the resulting ABI changes.
-
-Maintainers should follow [`RELEASING.md`](RELEASING.md) for the one-time
-crates.io bootstrap and subsequent tagged releases.

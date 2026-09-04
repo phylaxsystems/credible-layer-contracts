@@ -34,7 +34,6 @@ jobs:
           cargo fmt --manifest-path bindings/rust/Cargo.toml -- --check
           cargo clippy --manifest-path bindings/rust/Cargo.toml --all-targets -- -D warnings -D clippy::pedantic
           cargo test --manifest-path bindings/rust/Cargo.toml
-          cargo publish --manifest-path bindings/rust/Cargo.toml --dry-run
 
   rust-bindings-msrv:
     runs-on: ubuntu-latest
