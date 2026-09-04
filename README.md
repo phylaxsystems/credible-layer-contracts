@@ -164,6 +164,18 @@ Every broadcast entrypoint in `DeployTestingAdminVerifiers.s.sol` likewise requi
 
 ## Installation
 
+### Rust bindings
+
+Versioned Alloy bindings for the StateOracle interfaces are maintained under
+[`bindings/rust`](bindings/rust). They expose the historical `0.2.0` interface as
+`credible_layer_contracts::state_oracle::v1::IStateOracleV1` and the current
+`0.3.0` interface as `credible_layer_contracts::state_oracle::v2::IStateOracleV2`.
+Future breaking changes add another interface generation rather than replacing
+an existing one. The committed ABI snapshots allow the Rust crate to compile
+without installing Foundry.
+
+### Solidity development
+
 1. Clone the repository:
 
 ```bash

@@ -13,10 +13,58 @@ jobs:
       - name: Test release configuration
         run: python3 test/release/test_release_workflow.py
 
+  rust-bindings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - name: Setup Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt --no-self-update
+          rustup default stable
+      - name: Verify generated ABI and Cargo package
+        run: |
+          ./shell/create_artifacts.sh
+          git diff --exit-code -- bindings/rust/abi/IStateOracleV1.json bindings/rust/abi/IStateOracleV2.json
+          cargo fmt --manifest-path bindings/rust/Cargo.toml -- --check
+          cargo clippy --manifest-path bindings/rust/Cargo.toml --all-targets -- -D warnings -D clippy::pedantic
+          cargo test --manifest-path bindings/rust/Cargo.toml
+
+  rust-bindings-msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust 1.85
+        run: rustup toolchain install 1.85.0 --profile minimal --no-self-update
+      - name: Test Rust bindings on the declared MSRV
+        run: cargo +1.85.0 test --manifest-path bindings/rust/Cargo.toml --all-targets
+
   solidity-base:
     uses: phylaxsystems/actions/.github/workflows/solidity-base.yaml@main
     with:
+      # Run this separately below with a pinned Foundry version. The reusable
+      # workflow otherwise installs latest and can invalidate snapshots without
+      # any contract change.
+      disable-gas-snapshot: true
       gas-diff-tolerance: 25
+
+  gas-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1
+        with:
+          version: v1.7.1
+      - name: Compare gas reports
+        run: FOUNDRY_PROFILE=snapshot forge snapshot --check --silent --tolerance 25
 
   contract-compatibility:
     runs-on: ubuntu-latest
