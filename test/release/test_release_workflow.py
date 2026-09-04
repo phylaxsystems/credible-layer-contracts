@@ -133,6 +133,20 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertNotIn("cargo add credible-layer-contracts", documentation)
         self.assertFalse((ROOT / "bindings" / "rust" / "RELEASING.md").exists())
 
+    def test_public_bindings_docs_do_not_prescribe_consumer_integration(self):
+        public_docs = "\n".join(
+            (
+                (ROOT / "README.md").read_text(),
+                (ROOT / "bindings" / "rust" / "README.md").read_text(),
+                (ROOT / "bindings" / "rust" / "src" / "lib.rs").read_text(),
+            )
+        ).lower()
+
+        self.assertNotIn("credible-layer-contracts = { git =", public_docs)
+        self.assertNotIn("initializing submodules", public_docs)
+        self.assertNotIn("git consumers", public_docs)
+        self.assertNotIn("credible-sdk", public_docs)
+
     def test_github_release_is_local_and_uses_pinned_artifacts(self):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
         release_job = workflow.split("  release-github:\n", 1)[1]

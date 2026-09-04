@@ -5,13 +5,7 @@ Alloy Rust bindings for the versioned consumer interfaces maintained in
 
 The crate version follows the repository's contract release version. Its ABI
 snapshots are generated from the same canonical Solidity interfaces published
-in the `@phylax-systems/credible-layer-contracts` npm package. Consume it
-directly from this repository and pin an exact commit:
-
-```toml
-[dependencies]
-credible-layer-contracts = { git = "https://github.com/phylaxsystems/credible-layer-contracts.git", rev = "<commit>" }
-```
+in the `@phylax-systems/credible-layer-contracts` npm package.
 
 ```rust
 use credible_layer_contracts::state_oracle::v2::IStateOracleV2;
