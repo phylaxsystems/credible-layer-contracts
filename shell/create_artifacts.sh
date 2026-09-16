@@ -22,11 +22,34 @@ extract_abi() {
   echo "Extracted ABI to $target_dir/$output_name"
 }
 
+# Normalize an ABI for comparison while ignoring constructor entries and
+# Solidity-only internal type annotations. Duplicate entries are collapsed
+# because inherited errors can appear more than once in implementation ABIs.
+normalize_public_abi() {
+  jq -S '
+    [.abi[]
+      | select(.type != "constructor")
+      | walk(if type == "object" then del(.internalType) else . end)]
+    | unique
+    | sort_by(.type, (.name // ""), ((.inputs // []) | tostring), ((.outputs // []) | tostring))
+  ' "$1"
+}
+
 # Change to the root directory before running forge
 cd "$ROOT_DIR"
 
 # Generate the artifacts with Forge
 forge build
+
+# The latest versioned interface is the canonical consumer boundary used by the
+# Rust crate. Historical interfaces intentionally differ from the current
+# implementation and remain immutable. Refuse to publish if V2 drifts.
+if ! diff -u \
+  <(normalize_public_abi "$ROOT_DIR/out/StateOracle.sol/StateOracle.json") \
+  <(normalize_public_abi "$ROOT_DIR/out/IStateOracleV2.sol/IStateOracleV2.json"); then
+  echo "StateOracle implementation ABI differs from IStateOracleV2" >&2
+  exit 1
+fi
 
 # Delete the current artifacts
 ARTIFACTS="$ROOT_DIR/artifacts"
@@ -47,7 +70,19 @@ INTERFACES="${ARTIFACTS}/interfaces"
 extract_abi "$ROOT_DIR/out/IBatch.sol/IBatch.json" "${INTERFACES}"
 extract_abi "$ROOT_DIR/out/IDAVerifier.sol/IDAVerifier.json" "${INTERFACES}"
 extract_abi "$ROOT_DIR/out/IAdminVerifier.sol/IAdminVerifier.json" "${INTERFACES}"
+extract_abi "$ROOT_DIR/out/IStateOracleV1.sol/IStateOracleV1.json" "${INTERFACES}"
+extract_abi "$ROOT_DIR/out/IStateOracleV2.sol/IStateOracleV2.json" "${INTERFACES}"
 
 # Extract ABIs for libraries
 LIBRARIES="${ARTIFACTS}/libraries"
 extract_abi "$ROOT_DIR/out/AdminVerifierRegistry.sol/AdminVerifierRegistry.json" "${LIBRARIES}"
+
+# Keep the committed Rust binding input byte-for-byte aligned with the
+# versioned interface ABI published to npm. This snapshot lets Cargo git
+# dependencies build without Foundry or initialized submodules.
+RUST_BINDINGS_ABI="${ROOT_DIR}/bindings/rust/abi"
+mkdir -p "${RUST_BINDINGS_ABI}"
+cp "${INTERFACES}/IStateOracleV1.json" "${RUST_BINDINGS_ABI}/IStateOracleV1.json"
+echo "Synced IStateOracleV1 ABI to ${RUST_BINDINGS_ABI}/IStateOracleV1.json"
+cp "${INTERFACES}/IStateOracleV2.json" "${RUST_BINDINGS_ABI}/IStateOracleV2.json"
+echo "Synced IStateOracleV2 ABI to ${RUST_BINDINGS_ABI}/IStateOracleV2.json"

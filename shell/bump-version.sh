@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
 # Check if an argument was provided
 if [ $# -ne 1 ]; then
     echo "Usage: $0 <patch|minor|major>"
@@ -26,8 +28,14 @@ NEW_VERSION=$(npm version "$VERSION_TYPE" --no-git-tag-version)
 # Strip the leading 'v' from the version
 TAG_NAME=${NEW_VERSION#v}
 
-# Stage the package.json changes
-git add package.json
+# Keep the Cargo package on the same release train as the npm package and tag.
+sed -i.bak \
+    "s/^version = \"[0-9][0-9.]*\"$/version = \"${TAG_NAME}\"/" \
+    bindings/rust/Cargo.toml
+rm bindings/rust/Cargo.toml.bak
+
+# Stage the package metadata changes
+git add package.json bindings/rust/Cargo.toml
 
 # Commit the version bump
 git commit -m "chore: bump version to ${TAG_NAME}"
@@ -36,8 +44,9 @@ git commit -m "chore: bump version to ${TAG_NAME}"
 git tag "${TAG_NAME}"
 
 echo "✅ Successfully:"
-echo "  - Bumped npm version to ${TAG_NAME}"
+echo "  - Bumped npm and Cargo versions to ${TAG_NAME}"
 echo "  - Created git tag ${TAG_NAME}"
 echo ""
 echo "To push changes:"
-echo "  git push origin ${TAG_NAME}" 
+echo "  git push origin HEAD"
+echo "  git push origin ${TAG_NAME}"

@@ -37,10 +37,10 @@ the contracts and enforce the validation of assertions.
 
 #### State Oracle Behavior
 
-- Each assertion adopter maintains a manager and a set of enabled assertions.
-- Removing an assertion disables it, allowing the same assertion ID to be added again later with a new DA proof.
-- Activation and deactivation blocks are emitted in events and enforced off-chain via the configured timelock.
-- The boolean assertion storage layout requires a fresh proxy deployment and must not be used to upgrade a proxy containing assertion-window state.
+- Each assertion adopter maintains a manager and a set of assertion windows, preserving the existing window storage layout and `getAssertionWindow` getter.
+- A removed assertion ID can be added again at or after its previous deactivation block. There is no additional cooldown; re-add still requires the normal authorization, whitelist, DA verification, and capacity checks, followed by a new activation timelock.
+- Activation and deactivation blocks are stored in the latest window and emitted in events for enforcement off-chain. Re-add replaces the window with a new activation block and zero deactivation; earlier lifecycle history remains in events.
+- `hasAssertion` reports whether an ID has ever been associated with the adopter, including after removal. The assertion count increases on add and decreases on a removal request, rather than at the effective deactivation block.
 - External admin verifiers (owner-based, whitelist) govern who may register new adopters.
 - Managers select a registered DA verifier when adding each assertion, enabling per-assertion choice of data availability mechanism from a governance-managed registry.
 
@@ -88,6 +88,9 @@ Set the following environment variables before running the deployment scripts:
 - `DEPLOY_ADMIN_VERIFIER_OWNER` (true/false)
 - `DEPLOY_ADMIN_VERIFIER_WHITELIST` (true/false)
 - `ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS` (required when whitelist verifier is enabled)
+- `STATE_ORACLE_WHITELIST_ENABLED` (optional, defaults to true)
+- `DEPLOY_ADMIN_VERIFIER_ALWAYS_APPROVE` (optional, defaults to false; testing only)
+- `DEPLOYMENT_IS_TESTING` (must be true when the Always Approve verifier is enabled)
 
 The following additional variables apply only to `DeployCoreWithStaging.s.sol`:
 
@@ -96,14 +99,28 @@ The following additional variables apply only to `DeployCoreWithStaging.s.sol`:
 
 ### Deployment Overview
 
-Running `DeployCore` or `DeployCoreWithCreateX` will:
+Running `DeployCore`, `DeployCoreWithCreateX`, or `DeployCoreWithStaging` will:
 
 1. Deploy the DA verifier (ECDSA) and log its address.
 2. Deploy the DA verifier (OnChain) and log its address.
 3. Deploy `AdminVerifierOwner` if `DEPLOY_ADMIN_VERIFIER_OWNER=true` and log its address.
 4. Deploy `AdminVerifierWhitelist` if `DEPLOY_ADMIN_VERIFIER_WHITELIST=true` (using `ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS` as constructor default admin and initial whitelist admin) and log its address.
-5. Deploy the `StateOracle` implementation and log its address.
-6. Deploy the proxy, initialize it with the configured admin verifiers and DA verifiers, and log the proxy address.
+5. Deploy `AdminVerifierAlwaysApprove` if `DEPLOY_ADMIN_VERIFIER_ALWAYS_APPROVE=true` and `DEPLOYMENT_IS_TESTING=true`, and log its address.
+6. Deploy the `StateOracle` implementation and log its address.
+7. Deploy the proxy, initialize it with the configured admin verifiers, DA verifiers, and initial whitelist state, and log the proxy address.
+
+`DeployCoreWithStaging` repeats the last two steps for the staging oracle. It inherits the CreateX deployment path, so both State Oracle implementations, both proxies, both DA verifiers, and every selected admin verifier use named CREATE3 salts.
+
+For a local testing deployment with registration whitelisting disabled and the Always Approve verifier enabled, combine the required values above with:
+
+```sh
+DEPLOYMENT_IS_TESTING=true \
+STATE_ORACLE_WHITELIST_ENABLED=false \
+DEPLOY_ADMIN_VERIFIER_OWNER=false \
+DEPLOY_ADMIN_VERIFIER_WHITELIST=false \
+DEPLOY_ADMIN_VERIFIER_ALWAYS_APPROVE=true \
+forge script script/DeployCoreWithStaging.s.sol --rpc-url "$RPC_URL" --private-key "$DEPLOYER_PRIVATE_KEY" --broadcast
+```
 
 Console output will include labeled addresses for each deployed contract, e.g.:
 
@@ -116,7 +133,49 @@ State Oracle Implementation deployed at <address>
 State Oracle Proxy deployed at <address>
 ```
 
+### Interactive deployment wizard
+
+Run the terminal wizard from the repository root:
+
+```sh
+make deploy
+```
+
+The wizard uses the deterministic CreateX deployment backend and guides you through:
+
+- production or testing mode, plus an optional staging State Oracle;
+- admin verifier selection and assignment to the production and/or staging oracle;
+- ECDSA and/or on-chain DA verification, independently assigned to each State Oracle;
+- initial State Oracle whitelist state and addresses;
+- optional explorer verification using `ETHERSCAN_API_KEY`;
+- all State Oracle limits, timelocks, admins, and verifier-specific addresses; and
+- a Foundry keystore account selected from `cast wallet list`.
+
+The wallet password and explorer API key are read without echoing. The password is checked before
+deployment and stored only in a temporary mode-`600` file that is removed when the wizard exits.
+Before broadcasting, the wizard prints a redacted Forge command and a complete configuration
+summary. After broadcasting, it reads Foundry's receipt file and prints every deployment address,
+block number, transaction hash, and proxy admin address.
+
+Testing mode also exposes the `Super Admin` and `Always Approve` admin verifiers. These options are
+rejected by the Solidity deployment backend unless testing mode is explicitly enabled. Both testing
+verifiers use named CREATE3 salts, as do every production and staging contract deployed by the wizard.
+Every broadcast entrypoint in `DeployTestingAdminVerifiers.s.sol` likewise requires
+`DEPLOYMENT_IS_TESTING=true`.
+
 ## Installation
+
+### Rust bindings
+
+Versioned Alloy bindings for the StateOracle interfaces are maintained under
+[`bindings/rust`](bindings/rust). They expose the historical `0.2.0` interface as
+`credible_layer_contracts::state_oracle::v1::IStateOracleV1` and the current
+`0.3.0` interface as `credible_layer_contracts::state_oracle::v2::IStateOracleV2`.
+Future breaking changes add another interface generation rather than replacing
+an existing one. The committed ABI snapshots allow the Rust crate to compile
+without installing Foundry.
+
+### Solidity development
 
 1. Clone the repository:
 
@@ -133,8 +192,9 @@ forge install
 
 ### CreateX
 
-The forge script `script/DeployCoreWithCreateX` uses the CreateX contract factory for maintaining and controlling contract addresses
-of the protocol.
+The forge scripts `script/DeployCoreWithCreateX.s.sol`, `script/DeployCoreWithStaging.s.sol`, `script/DeployWizard.s.sol`, and `script/DeployTestingAdminVerifiers.s.sol` use the CreateX contract factory to maintain stable protocol contract addresses. CREATE3 derives each address from the deployer and a contract-specific salt, so transaction order, deployer nonce, and contract init code do not change it. Production and staging State Oracles use different salts; the testing-only SuperAdmin and AlwaysApprove verifiers also have distinct salts shared by the wizard and standalone testing script.
+
+The fixed address must be empty when first deployed. On a retained chain, rerunning a salt whose contract already exists will revert; preserve the existing proxy and upgrade it for code changes, or reset the chain before performing a clean redeployment.
 The deployment address of CreateX is `0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed`.
 If CreateX is not deployed on your chain, you will find a helper script to deploy CreateX at
 `shell/deploy_create_x.sh`.
@@ -170,6 +230,7 @@ STATE_ORACLE_ADMIN_ADDRESS=0xD2EfB83dd46094775188d927323b2523EaE3d087 \
 DA_PROVER_ADDRESS=0x670cFA8781BF365Aefb6c048CDc522B857946C71 \
 DEPLOY_ADMIN_VERIFIER_OWNER=true \
 DEPLOY_ADMIN_VERIFIER_WHITELIST=true \
+STATE_ORACLE_WHITELIST_ENABLED=true \
 ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS=0xD2EfB83dd46094775188d927323b2523EaE3d087 \
 forge script script/DeployCoreWithCreateX.s.sol --rpc-url http://localhost:8545 --private-key 0xac431098061ca49f5b36121d01a17d30e1d0624227d08b583ff328f1efe0d4a2 --broadcast
 ```
@@ -194,5 +255,40 @@ Private Key: 0xac431098061ca49f5b36121d01a17d30e1d0624227d08b583ff328f1efe0d4a2
 Account: (0x8d63e0FE87CA36E06a076584fCA651A684D4c97d)
 ```
 
-When broadcasting `script/DeployCore.s.sol ` with the above key, the contracts will always be deployed
-at the same address. Neither the initCode of the contracts nor the nonce influence the address generation.
+When broadcasting `script/DeployCoreWithCreateX.s.sol` with the above key, the contracts will always be
+deployed at the same addresses on a clean chain. Neither init code nor nonce influences address generation.
+
+## Compatibility Checks
+
+Two snapshots guard the surfaces that break consumers silently. Both run on every pull request and
+are reproducible locally.
+
+| Check | Baseline | Verify | Refresh |
+| --- | --- | --- | --- |
+| Published ABI | base branch | `make check-abi` | not applicable |
+| Storage layout | `.storage-layout` | `make check-storage-layout` | `make update-storage-layout` |
+
+The ABI check compares the working tree against the same contracts at a base revision. Nothing is
+committed for it: the published ABI is a release artifact, generated by `shell/create_artifacts.sh`
+into a gitignored `artifacts/` and published on tag, so a second copy in the repository would only
+duplicate it. The baseline is built in a temporary worktree and thrown away.
+
+```sh
+make check-abi                          # against origin/main
+make check-abi ABI_BASE_REF=<ref>       # against any revision
+```
+
+It covers the contracts published by `shell/create_artifacts.sh`, plus `AdminVerifierWhitelist`,
+whose signatures the dapp seed script calls by literal string. Entries are keyed by function
+selector and event topic0, so reordering by the toolchain never causes a failure. A removed entry,
+a changed parameter or return type, a changed `indexed` layout, or tightened state mutability fails
+the check; new functions and events are reported as additive rather than breaking.
+
+`make` reports any failed recipe as `Error 2`, so a purely additive change shows `Error 2` locally.
+CI treats that case as a warning and lets the build pass. The script's own exit codes are
+`0` unchanged, `1` additive, `2` breaking, `3` could not run.
+
+One change is invisible to this check by construction: swapping two parameters of the same type, such
+as the two `address` arguments of `addToWhitelist(address,address)`, leaves the canonical signature
+and therefore the selector untouched. No selector-based comparison can detect it, so review argument
+order by hand.

@@ -5,6 +5,7 @@ import {StateOracle} from "../src/StateOracle.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
 import {IDAVerifier} from "../src/interfaces/IDAVerifier.sol";
+import {AdminVerifierAlwaysApprove} from "../src/verification/admin/AdminVerifierAlwaysApprove.sol";
 import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.sol";
 import {DAVerifierECDSA} from "../src/verification/da/DAVerifierECDSA.sol";
 import {DAVerifierOnChain} from "../src/verification/da/DAVerifierOnChain.sol";
@@ -29,6 +30,9 @@ contract DeployCore is Script {
     address daProver;
     bool deployOwnerVerifier;
     bool deployWhitelistVerifier;
+    bool deployAlwaysApproveVerifier;
+    bool stateOracleWhitelistEnabled;
+    bool testingDeployment;
     address whitelistAdmin;
 
     function setUp() public virtual {
@@ -40,18 +44,29 @@ contract DeployCore is Script {
         // Verifiers
         deployOwnerVerifier = vm.envBool("DEPLOY_ADMIN_VERIFIER_OWNER");
         deployWhitelistVerifier = vm.envBool("DEPLOY_ADMIN_VERIFIER_WHITELIST");
-        whitelistAdmin = vm.envAddress("ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS");
+        deployAlwaysApproveVerifier = vm.envOr("DEPLOY_ADMIN_VERIFIER_ALWAYS_APPROVE", false);
+        stateOracleWhitelistEnabled = vm.envOr("STATE_ORACLE_WHITELIST_ENABLED", true);
+        testingDeployment = vm.envOr("DEPLOYMENT_IS_TESTING", false);
+        if (deployWhitelistVerifier) {
+            whitelistAdmin = vm.envAddress("ADMIN_VERIFIER_WHITELIST_ADMIN_ADDRESS");
+        }
 
         assert(daProver != address(0));
         assert(assertionTimelockBlocks > 0);
         assert(admin != address(0));
         assert(deployWhitelistVerifier && whitelistAdmin != address(0) || !deployWhitelistVerifier);
+        require(testingDeployment || !deployAlwaysApproveVerifier, "Always Approve verifier is test-only");
     }
 
     modifier broadcast() {
         vm.startBroadcast();
         _;
         vm.stopBroadcast();
+    }
+
+    modifier testingOnly() {
+        require(testingDeployment, "Always Approve verifier is test-only");
+        _;
     }
 
     function run() public virtual broadcast {
@@ -102,6 +117,10 @@ contract DeployCore is Script {
         _deployWhitelistAdminVerifier();
     }
 
+    function deployAlwaysApproveAdminVerifier() public testingOnly broadcast {
+        _deployAlwaysApproveAdminVerifier();
+    }
+
     function fundPersistentAccounts() public broadcast {
         _fundPersistentAccounts();
     }
@@ -122,13 +141,17 @@ contract DeployCore is Script {
         uint256 count;
         if (deployOwnerVerifier) count++;
         if (deployWhitelistVerifier) count++;
+        if (deployAlwaysApproveVerifier) count++;
         deployments = new address[](count);
         uint256 index;
         if (deployOwnerVerifier) {
             deployments[index++] = _deployOwnerAdminVerifier();
         }
         if (deployWhitelistVerifier) {
-            deployments[index] = _deployWhitelistAdminVerifier();
+            deployments[index++] = _deployWhitelistAdminVerifier();
+        }
+        if (deployAlwaysApproveVerifier) {
+            deployments[index] = _deployAlwaysApproveAdminVerifier();
         }
     }
 
@@ -152,8 +175,10 @@ contract DeployCore is Script {
         for (uint256 i = 0; i < daVerifierAddresses.length; i++) {
             daVfrs[i] = IDAVerifier(daVerifierAddresses[i]);
         }
-        bytes memory initCallData =
-            abi.encodeWithSelector(StateOracle.initialize.selector, admin, adminVerifiers, daVfrs, maxAssertions);
+        bytes memory initCallData = abi.encodeCall(
+            StateOracle.initializeWithWhitelist,
+            (admin, adminVerifiers, daVfrs, maxAssertions, stateOracleWhitelistEnabled, new address[](0))
+        );
         address proxyAddress = address(new TransparentUpgradeableProxy(address(stateOracle), admin, initCallData));
         console2.log("State Oracle Proxy deployed at", proxyAddress);
         return proxyAddress;
@@ -166,8 +191,15 @@ contract DeployCore is Script {
     }
 
     function _deployWhitelistAdminVerifier() internal virtual returns (address verifier) {
+        require(whitelistAdmin != address(0), "Invalid whitelist admin");
         verifier = address(new AdminVerifierWhitelist(whitelistAdmin));
         console2.log("Admin Verifier (Whitelist) deployed at", verifier);
+        return verifier;
+    }
+
+    function _deployAlwaysApproveAdminVerifier() internal virtual returns (address verifier) {
+        verifier = address(new AdminVerifierAlwaysApprove());
+        console2.log("Testing Admin Verifier (Always Approve) deployed at", verifier);
         return verifier;
     }
 

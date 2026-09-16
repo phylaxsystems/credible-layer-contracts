@@ -45,6 +45,8 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     error InvalidAssertionTimelock();
     /// @notice Thrown when attempting to add more assertions than the maximum allowed
     error TooManyAssertions();
+    /// @notice Thrown when attempting to remove or modify an already removed assertion
+    error AssertionAlreadyRemoved();
     /// @notice Thrown when whitelist is enabled and caller is not whitelisted
     error NotWhitelisted();
     /// @notice Thrown when attempting to add an account that is already whitelisted
@@ -57,14 +59,21 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     error WhitelistAlreadyDisabled();
 
     /// @notice Struct containing assertion adopter data
-    /// @dev The assertions mapping is not storage-compatible with the AssertionWindow mapping used before this layout.
     /// @param manager Address authorized to manage assertions
-    /// @param assertions Mapping of assertion IDs to their enabled state
+    /// @param assertions Mapping of assertion IDs to assertion windows, describing the assertion's lifecycle
     struct AssertionAdopter {
         address manager;
         address pendingManager;
         uint16 assertionCount;
-        mapping(bytes32 assertionId => bool isEnabled) assertions;
+        mapping(bytes32 assertionId => AssertionWindow assertionWindow) assertions;
+    }
+
+    /// @notice Struct containing the assertion time window
+    /// @param activationBlock Block number when the assertion becomes active
+    /// @param deactivationBlock Block number when the assertion becomes inactive
+    struct AssertionWindow {
+        uint256 activationBlock;
+        uint256 deactivationBlock;
     }
 
     /// @notice Emitted when a new assertion adopter is registered
@@ -192,14 +201,46 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         IDAVerifier[] calldata _daVerifiers,
         uint16 _maxAssertionsPerAA
     ) external initializer {
+        _initialize(admin, _adminVerifiers, _daVerifiers, _maxAssertionsPerAA, true, new address[](0));
+    }
+
+    /// @notice Initializes the contract with an explicit whitelist configuration
+    /// @param admin The address to set as the admin
+    /// @param _adminVerifiers The admin verifiers to add
+    /// @param _daVerifiers The DA verifiers to add
+    /// @param _maxAssertionsPerAA Maximum number of assertions per assertion adopter
+    /// @param _whitelistEnabled Whether whitelist checks are enabled initially
+    /// @param _initialWhitelist Addresses to add to the initial whitelist
+    function initializeWithWhitelist(
+        address admin,
+        IAdminVerifier[] calldata _adminVerifiers,
+        IDAVerifier[] calldata _daVerifiers,
+        uint16 _maxAssertionsPerAA,
+        bool _whitelistEnabled,
+        address[] calldata _initialWhitelist
+    ) external initializer {
+        _initialize(admin, _adminVerifiers, _daVerifiers, _maxAssertionsPerAA, _whitelistEnabled, _initialWhitelist);
+    }
+
+    function _initialize(
+        address admin,
+        IAdminVerifier[] memory _adminVerifiers,
+        IDAVerifier[] memory _daVerifiers,
+        uint16 _maxAssertionsPerAA,
+        bool _whitelistEnabled,
+        address[] memory _initialWhitelist
+    ) internal {
         _initializeRoles(admin);
 
-        whitelistEnabled = true;
+        whitelistEnabled = _whitelistEnabled;
         for (uint256 i = 0; i < _adminVerifiers.length; i++) {
             _addAdminVerifier(_adminVerifiers[i]);
         }
         for (uint256 i = 0; i < _daVerifiers.length; i++) {
             _addDAVerifier(_daVerifiers[i]);
+        }
+        for (uint256 i = 0; i < _initialWhitelist.length; i++) {
+            _addToWhitelist(_initialWhitelist[i]);
         }
         _setMaxAssertionsPerAA(_maxAssertionsPerAA);
     }
@@ -220,7 +261,8 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     }
 
     /// @notice Adds a new assertion for an assertion adopter
-    /// @dev A disabled assertion ID can be added again. Each addition requires a valid DA proof.
+    /// @dev An assertion ID can be re-added once its previous deactivation block is reached.
+    /// Each addition requires a valid DA proof and starts a new activation timelock.
     /// @param contractAddress The address of the assertion adopter
     /// @param assertionId The unique identifier for the assertion
     /// @param daVerifier The DA verifier to use for proof verification
@@ -233,13 +275,18 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         bytes calldata metadata,
         bytes calldata proof
     ) external onlyManager(contractAddress) onlyWhitelisted {
-        require(!hasAssertion(contractAddress, assertionId), AssertionAlreadyExists());
+        AssertionWindow storage window = assertionAdopters[contractAddress].assertions[assertionId];
+        require(
+            window.activationBlock == 0 || (window.deactivationBlock != 0 && block.number >= window.deactivationBlock),
+            AssertionAlreadyExists()
+        );
         require(daVerifiers.isRegistered(daVerifier), DAVerifierNotRegistered());
         require(daVerifier.verifyDA(assertionId, metadata, proof), InvalidDAProof(daVerifier));
         require(assertionAdopters[contractAddress].assertionCount < maxAssertionsPerAA, TooManyAssertions());
 
         uint256 activationBlock = block.number + ASSERTION_TIMELOCK_BLOCKS;
-        assertionAdopters[contractAddress].assertions[assertionId] = true;
+        window.activationBlock = activationBlock;
+        window.deactivationBlock = 0;
         assertionAdopters[contractAddress].assertionCount++;
         emit AssertionAdded(contractAddress, assertionId, activationBlock, daVerifier, metadata, proof);
     }
@@ -282,6 +329,10 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @notice Adds an account to the whitelist
     /// @param account The address to add
     function addToWhitelist(address account) external onlyOperator {
+        _addToWhitelist(account);
+    }
+
+    function _addToWhitelist(address account) internal {
         require(!whitelist[account], AlreadyWhitelisted(account));
         whitelist[account] = true;
         emit AddedToWhitelist(account);
@@ -307,18 +358,40 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @param assertionId The unique identifier of the assertion to remove
     function _removeAssertion(address contractAddress, bytes32 assertionId) internal {
         require(hasAssertion(contractAddress, assertionId), AssertionDoesNotExist());
+        require(
+            assertionAdopters[contractAddress].assertions[assertionId].deactivationBlock == 0, AssertionAlreadyRemoved()
+        );
         uint256 deactivationBlock = block.number + ASSERTION_TIMELOCK_BLOCKS;
-        assertionAdopters[contractAddress].assertions[assertionId] = false;
+        assertionAdopters[contractAddress].assertions[assertionId].deactivationBlock = deactivationBlock;
         assertionAdopters[contractAddress].assertionCount--;
         emit AssertionRemoved(contractAddress, assertionId, deactivationBlock);
     }
 
-    /// @notice Checks if an assertion is enabled for an assertion adopter
+    /// @notice Checks if an assertion is associated with an assertion adopter
+    /// @dev Remains true after removal; it does not indicate current enforcement or re-add eligibility.
     /// @param contractAddress The address of the contract
     /// @param assertionId The unique identifier of the assertion
-    /// @return isEnabled True if the assertion is enabled for the adopter, false otherwise
-    function hasAssertion(address contractAddress, bytes32 assertionId) public view returns (bool isEnabled) {
-        return assertionAdopters[contractAddress].assertions[assertionId];
+    /// @return isAssociated True if the assertion is associated with the adopter, false otherwise
+    function hasAssertion(address contractAddress, bytes32 assertionId) public view returns (bool isAssociated) {
+        return assertionAdopters[contractAddress].assertions[assertionId].activationBlock != 0;
+    }
+
+    /// @notice Gets the latest assertion window for a given assertion adopter and assertion
+    /// @dev Returns 0 for both activationBlock and deactivationBlock if the assertion is not associated.
+    /// A successful re-add replaces this window; earlier lifecycle history remains in events.
+    /// @param contractAddress The address of the assertion adopter
+    /// @param assertionId The unique identifier of the assertion
+    /// @return activationBlock The block number when the assertion becomes active
+    /// @return deactivationBlock The block number when the assertion becomes inactive
+    function getAssertionWindow(address contractAddress, bytes32 assertionId)
+        public
+        view
+        returns (uint256 activationBlock, uint256 deactivationBlock)
+    {
+        return (
+            assertionAdopters[contractAddress].assertions[assertionId].activationBlock,
+            assertionAdopters[contractAddress].assertions[assertionId].deactivationBlock
+        );
     }
 
     /// @notice Gets the assertion count for a given assertion adopter
