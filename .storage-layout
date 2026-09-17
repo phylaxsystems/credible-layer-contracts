@@ -38,7 +38,7 @@
       "label": "adminVerifiers",
       "offset": 0,
       "slot": "4",
-      "type": "t_mapping(t_contract(IAdminVerifier)2650,t_bool)"
+      "type": "t_mapping(t_contract(IAdminVerifier)2673,t_bool)"
     },
     {
       "astId": 1079,
@@ -46,7 +46,7 @@
       "label": "daVerifiers",
       "offset": 0,
       "slot": "5",
-      "type": "t_mapping(t_contract(IDAVerifier)2679,t_bool)"
+      "type": "t_mapping(t_contract(IDAVerifier)2702,t_bool)"
     },
     {
       "astId": 1084,
@@ -89,12 +89,12 @@
       "label": "bytes32",
       "numberOfBytes": "32"
     },
-    "t_contract(IAdminVerifier)2650": {
+    "t_contract(IAdminVerifier)2673": {
       "encoding": "inplace",
       "label": "contract IAdminVerifier",
       "numberOfBytes": "20"
     },
-    "t_contract(IDAVerifier)2679": {
+    "t_contract(IDAVerifier)2702": {
       "encoding": "inplace",
       "label": "contract IDAVerifier",
       "numberOfBytes": "20"
@@ -127,16 +127,16 @@
       "numberOfBytes": "32",
       "value": "t_struct(RoleData)22_storage"
     },
-    "t_mapping(t_contract(IAdminVerifier)2650,t_bool)": {
+    "t_mapping(t_contract(IAdminVerifier)2673,t_bool)": {
       "encoding": "mapping",
-      "key": "t_contract(IAdminVerifier)2650",
+      "key": "t_contract(IAdminVerifier)2673",
       "label": "mapping(contract IAdminVerifier => bool)",
       "numberOfBytes": "32",
       "value": "t_bool"
     },
-    "t_mapping(t_contract(IDAVerifier)2679,t_bool)": {
+    "t_mapping(t_contract(IDAVerifier)2702,t_bool)": {
       "encoding": "mapping",
-      "key": "t_contract(IDAVerifier)2679",
+      "key": "t_contract(IDAVerifier)2702",
       "label": "mapping(contract IDAVerifier => bool)",
       "numberOfBytes": "32",
       "value": "t_bool"

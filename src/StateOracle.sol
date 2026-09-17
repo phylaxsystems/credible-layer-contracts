@@ -261,8 +261,8 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     }
 
     /// @notice Adds a new assertion for an assertion adopter
-    /// @dev An assertion ID can be added only once. If removed (inactive),
-    /// it cannot be re-added - attempting to reuse the same ID will revert.
+    /// @dev An assertion ID can be re-added once its previous deactivation block is reached.
+    /// Each addition requires a valid DA proof and starts a new activation timelock.
     /// @param contractAddress The address of the assertion adopter
     /// @param assertionId The unique identifier for the assertion
     /// @param daVerifier The DA verifier to use for proof verification
@@ -275,13 +275,18 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         bytes calldata metadata,
         bytes calldata proof
     ) external onlyManager(contractAddress) onlyWhitelisted {
-        require(!hasAssertion(contractAddress, assertionId), AssertionAlreadyExists());
+        AssertionWindow storage window = assertionAdopters[contractAddress].assertions[assertionId];
+        require(
+            window.activationBlock == 0 || (window.deactivationBlock != 0 && block.number >= window.deactivationBlock),
+            AssertionAlreadyExists()
+        );
         require(daVerifiers.isRegistered(daVerifier), DAVerifierNotRegistered());
         require(daVerifier.verifyDA(assertionId, metadata, proof), InvalidDAProof(daVerifier));
         require(assertionAdopters[contractAddress].assertionCount < maxAssertionsPerAA, TooManyAssertions());
 
         uint256 activationBlock = block.number + ASSERTION_TIMELOCK_BLOCKS;
-        assertionAdopters[contractAddress].assertions[assertionId].activationBlock = activationBlock;
+        window.activationBlock = activationBlock;
+        window.deactivationBlock = 0;
         assertionAdopters[contractAddress].assertionCount++;
         emit AssertionAdded(contractAddress, assertionId, activationBlock, daVerifier, metadata, proof);
     }
@@ -363,6 +368,7 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     }
 
     /// @notice Checks if an assertion is associated with an assertion adopter
+    /// @dev Remains true after removal; it does not indicate current enforcement or re-add eligibility.
     /// @param contractAddress The address of the contract
     /// @param assertionId The unique identifier of the assertion
     /// @return isAssociated True if the assertion is associated with the adopter, false otherwise
@@ -370,8 +376,9 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         return assertionAdopters[contractAddress].assertions[assertionId].activationBlock != 0;
     }
 
-    /// @notice Gets the assertion window for a given assertion adopter and assertion
-    /// @dev Returns 0 for both activationBlock and deactivationBlock if the assertion is not associated
+    /// @notice Gets the latest assertion window for a given assertion adopter and assertion
+    /// @dev Returns 0 for both activationBlock and deactivationBlock if the assertion is not associated.
+    /// A successful re-add replaces this window; earlier lifecycle history remains in events.
     /// @param contractAddress The address of the assertion adopter
     /// @param assertionId The unique identifier of the assertion
     /// @return activationBlock The block number when the assertion becomes active

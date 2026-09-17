@@ -37,9 +37,10 @@ the contracts and enforce the validation of assertions.
 
 #### State Oracle Behavior
 
-- Each assertion adopter maintains a manager and a set of assertion windows.
-- An assertion ID can be registered only once. If removed (inactive), it cannot be re-added—attempting to reuse the same ID will revert.
-- Activation and deactivation blocks are enforced via the configured timelock.
+- Each assertion adopter maintains a manager and a set of assertion windows, preserving the existing window storage layout and `getAssertionWindow` getter.
+- A removed assertion ID can be added again at or after its previous deactivation block. There is no additional cooldown; re-add still requires the normal authorization, whitelist, DA verification, and capacity checks, followed by a new activation timelock.
+- Activation and deactivation blocks are stored in the latest window and emitted in events for enforcement off-chain. Re-add replaces the window with a new activation block and zero deactivation; earlier lifecycle history remains in events.
+- `hasAssertion` reports whether an ID has ever been associated with the adopter, including after removal. The assertion count increases on add and decreases on a removal request, rather than at the effective deactivation block.
 - External admin verifiers (owner-based, whitelist) govern who may register new adopters.
 - Managers select a registered DA verifier when adding each assertion, enabling per-assertion choice of data availability mechanism from a governance-managed registry.
 

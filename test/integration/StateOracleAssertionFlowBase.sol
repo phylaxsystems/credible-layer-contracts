@@ -89,9 +89,6 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
         stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be added");
-        (uint256 activationBlock, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
-        assertEq(activationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Activation mismatch");
-        assertEq(deactivationBlock, 0, "Deactivation should be 0");
     }
 
     function test_RevertIf_addAssertionWithInvalidProof() public {
@@ -111,18 +108,104 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
         stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
 
         assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should exist after add");
-        (uint256 activationBlock,) = stateOracle.getAssertionWindow(adopter, assertionId);
-        assertEq(activationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Activation mismatch");
+        uint256 activationBlock = block.number + TIMEOUT;
 
         vm.roll(block.number + 1);
 
         vm.prank(manager);
         stateOracle.removeAssertion(adopter, assertionId);
 
+        assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Removal preserves the assertion association");
+        _assertWindow(assertionId, activationBlock, block.number + TIMEOUT);
+        assertEq(stateOracle.getAssertionCount(adopter), 0, "Removal immediately releases capacity");
+    }
+
+    function test_addAndRemoveAssertionAcrossMultipleCycles() public {
+        (bytes32 assertionId, bytes memory metadata, bytes memory proof) =
+            _generateValidAssertion(bytes32(uint256(0x1212)));
+
+        vm.startPrank(manager);
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 activationBlock = block.number + TIMEOUT;
+            vm.expectEmit(true, true, true, true, address(stateOracle));
+            emit StateOracle.AssertionAdded(adopter, assertionId, activationBlock, daVerifier, metadata, proof);
+            stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
+            assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should be associated after add");
+            _assertWindow(assertionId, activationBlock, 0);
+            assertEq(stateOracle.getAssertionCount(adopter), 1, "Assertion count should increase after add");
+
+            vm.roll(activationBlock);
+            uint256 deactivationBlock = block.number + TIMEOUT;
+            vm.expectEmit(true, true, false, true, address(stateOracle));
+            emit StateOracle.AssertionRemoved(adopter, assertionId, deactivationBlock);
+            stateOracle.removeAssertion(adopter, assertionId);
+            assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Removal preserves the assertion association");
+            _assertWindow(assertionId, activationBlock, deactivationBlock);
+            assertEq(stateOracle.getAssertionCount(adopter), 0, "Assertion count should decrease after removal");
+
+            vm.roll(deactivationBlock);
+        }
+        vm.stopPrank();
+    }
+
+    function test_readdAssertionWithValidProof() public {
+        (bytes32 assertionId, bytes memory metadata, bytes memory proof) =
+            _generateValidAssertion(bytes32(uint256(0x2222)));
+
+        vm.startPrank(manager);
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
+        stateOracle.removeAssertion(adopter, assertionId);
         (, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
-        assertEq(
-            deactivationBlock, block.number + stateOracle.ASSERTION_TIMELOCK_BLOCKS(), "Deactivation block mismatch"
-        );
+        vm.roll(deactivationBlock);
+
+        uint256 activationBlock = deactivationBlock + TIMEOUT;
+        vm.expectEmit(true, true, true, true, address(stateOracle));
+        emit StateOracle.AssertionAdded(adopter, assertionId, activationBlock, daVerifier, metadata, proof);
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
+        vm.stopPrank();
+
+        assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Assertion should remain associated");
+        _assertWindow(assertionId, activationBlock, 0);
+        assertEq(stateOracle.getAssertionCount(adopter), 1, "Re-add should reserve capacity again");
+    }
+
+    function test_RevertIf_readdAssertionBeforeDeactivation() public {
+        (bytes32 assertionId, bytes memory metadata, bytes memory proof) =
+            _generateValidAssertion(bytes32(uint256(0x2323)));
+
+        vm.startPrank(manager);
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
+        stateOracle.removeAssertion(adopter, assertionId);
+        (uint256 activationBlock, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
+        vm.roll(deactivationBlock - 1);
+
+        vm.expectRevert(StateOracle.AssertionAlreadyExists.selector);
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
+        vm.stopPrank();
+
+        _assertWindow(assertionId, activationBlock, deactivationBlock);
+        assertEq(stateOracle.getAssertionCount(adopter), 0, "Early re-add must not reserve capacity");
+    }
+
+    function test_RevertIf_readdAssertionWithInvalidProof() public {
+        (bytes32 assertionId, bytes memory metadata, bytes memory proof) =
+            _generateValidAssertion(bytes32(uint256(0x3333)));
+        (, bytes memory invalidMetadata, bytes memory invalidProof) =
+            _generateInvalidAssertion(bytes32(uint256(0x4444)));
+
+        vm.startPrank(manager);
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
+        stateOracle.removeAssertion(adopter, assertionId);
+        (uint256 activationBlock, uint256 deactivationBlock) = stateOracle.getAssertionWindow(adopter, assertionId);
+        vm.roll(deactivationBlock);
+
+        vm.expectRevert(abi.encodeWithSelector(StateOracle.InvalidDAProof.selector, daVerifier));
+        stateOracle.addAssertion(adopter, assertionId, daVerifier, invalidMetadata, invalidProof);
+        vm.stopPrank();
+
+        assertTrue(stateOracle.hasAssertion(adopter, assertionId), "Failed re-add preserves the assertion association");
+        _assertWindow(assertionId, activationBlock, deactivationBlock);
+        assertEq(stateOracle.getAssertionCount(adopter), 0, "Assertion count should not change");
     }
 
     function test_addMultipleAssertions() public {
@@ -160,5 +243,11 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
 
         vm.prank(manager);
         stateOracle.addAssertion(adopter, assertionId, daVerifier, metadata, proof);
+    }
+
+    function _assertWindow(bytes32 assertionId, uint256 activationBlock, uint256 deactivationBlock) internal view {
+        (uint256 storedActivation, uint256 storedDeactivation) = stateOracle.getAssertionWindow(adopter, assertionId);
+        assertEq(storedActivation, activationBlock, "Unexpected activation block");
+        assertEq(storedDeactivation, deactivationBlock, "Unexpected deactivation block");
     }
 }

@@ -99,9 +99,11 @@ Important details:
 - The constructor sets immutable configuration and then disables initialization on the implementation.
 - Real initialization happens through `initialize(...)` on the proxy.
 - `whitelistEnabled` is set to `true` during initialization.
-- `hasAssertion()` only checks whether the assertion was ever added, not whether it is currently active.
-- Removed assertions cannot be re-added because their `activationBlock` remains non-zero.
-- `assertionCount` tracks currently registered, not-yet-removed assertions for each adopter.
+- `hasAssertion()` only checks whether the assertion was ever added, not whether it is currently active or eligible for re-add.
+- Removed assertions can be re-added at or after their effective deactivation block, subject to the normal authorization, whitelist, DA verification, and capacity checks.
+- `assertionCount` tracks currently registered, not-yet-removed assertions for each adopter; it decreases when removal is requested.
+- Activation and deactivation blocks are stored in the latest assertion window and emitted in events. Re-add sets a new activation block and clears the old deactivation block.
+- The existing `AssertionWindow` mapping layout and `getAssertionWindow` getter are preserved. Earlier lifecycle history remains in events.
 
 ### 2. `StateOracleAccessControl`
 
@@ -264,12 +266,12 @@ Many tests disable it in `setUp()` to isolate the behavior being tested. If you 
 
 An assertion:
 
-- becomes active at `block.number + ASSERTION_TIMELOCK_BLOCKS`,
+- becomes active at `block.number + ASSERTION_TIMELOCK_BLOCKS` after each addition,
 - becomes inactive at `block.number + ASSERTION_TIMELOCK_BLOCKS` when removed,
-- cannot be added twice,
-- cannot be re-added after removal.
+- cannot be added again while its current lifecycle has no removal scheduled or its deactivation block is still in the future,
+- can be re-added at or after the previous deactivation block, without an additional cooldown.
 
-Do not accidentally "fix" this without confirming product intent; the README and implementation currently agree on this one-time registration rule.
+The getter returns the latest lifecycle window; event consumers apply the timelocked transitions and retain prior lifecycle history. Guardian removal follows the same re-add rule, and a guardian can separately revoke management. Every re-add runs DA verification again, but an existing proof may be reused if the verifier still accepts it.
 
 ### `AdminVerifierOwner` compatibility
 
