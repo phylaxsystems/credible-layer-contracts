@@ -22,6 +22,11 @@ remain available so consumers can select the interface used by their deployment.
 | --- | --- | --- |
 | `0.2.0` | `IStateOracleV1` | `state_oracle::v1` |
 | `0.3.0` | `IStateOracleV2` | `state_oracle::v2` |
+| `0.4.0` | `IStateOracleV2` | `state_oracle::v2` |
+
+The table maps contract releases to compatible interfaces. The Rust crate is
+available from release `0.4.0`; earlier Git release tags do not contain
+`bindings/rust`.
 
 Do not edit files under `abi/` by hand. Run `./shell/create_artifacts.sh` from
 the repository root and review the resulting ABI changes.
