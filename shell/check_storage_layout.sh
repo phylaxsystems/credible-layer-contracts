@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# With a base revision, check compatibility against its snapshot as well as
+# drift against the candidate snapshot. Without one, retain the local drift check.
+# CI must supply the same trusted base revision used by the ABI comparison.
 SNAPSHOT_FILE=".storage-layout"
 
 # Reported separately from a layout change, so a broken build is never mistaken
@@ -75,9 +78,24 @@ if ! jq -e '(.storage | type == "array") and (.types | type == "object")' \
 fi
 
 CURRENT=$(echo "$RAW" | normalize)
-PREVIOUS=$(normalize <"$SNAPSHOT_FILE")
+COMMITTED=$(normalize <"$SNAPSHOT_FILE")
+PREVIOUS=$COMMITTED
 
-if [ "$CURRENT" = "$PREVIOUS" ]; then
+if [ "$#" -gt 0 ]; then
+    if ! BASE_SHA=$(git rev-parse --verify --end-of-options "${1}^{commit}") ||
+       ! BASE_SNAPSHOT=$(git show "${BASE_SHA}:${SNAPSHOT_FILE}"); then
+        echo "ERROR: cannot read $SNAPSHOT_FILE from base revision '$1'." >&2
+        exit 3
+    fi
+    if ! echo "$BASE_SNAPSHOT" | jq -e \
+        '(.storage | type == "array") and (.types | type == "object")' >/dev/null; then
+        echo "ERROR: base revision '$1' has an invalid storage layout snapshot." >&2
+        exit 3
+    fi
+    PREVIOUS=$(echo "$BASE_SNAPSHOT" | normalize)
+fi
+
+if [ "$CURRENT" = "$PREVIOUS" ] && [ "$CURRENT" = "$COMMITTED" ]; then
     echo "Storage layout unchanged."
     exit 0
 fi
@@ -207,10 +225,16 @@ if $collision_detected; then
     exit 2
 fi
 
+# An additive change is compatible, but its new snapshot must still be committed.
+if [ "$CURRENT" = "$COMMITTED" ]; then
+    echo "Storage layout is compatible with the base and the snapshot is current."
+    exit 0
+fi
+
 echo "Storage layout has changed (but no collisions detected)."
 echo ""
 echo "Diff:"
-diff <(echo "$PREVIOUS" | jq -S '.') <(echo "$CURRENT" | jq -S '.') || true
+diff <(echo "$COMMITTED" | jq -S '.') <(echo "$CURRENT" | jq -S '.') || true
 echo ""
 echo "If this change is intentional, update the snapshot:"
 echo "  forge inspect StateOracle storage-layout --json > .storage-layout"

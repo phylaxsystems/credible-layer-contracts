@@ -12,6 +12,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test release configuration
         run: python3 test/release/test_release_workflow.py
+      - name: Test storage compatibility gate
+        run: python3 test/shell/test_storage_layout.py
 
   rust-bindings:
     runs-on: ubuntu-latest
@@ -147,9 +149,11 @@ jobs:
 
       - name: Check storage layout
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        env:
+          BASE_REF: ${{ steps.base.outputs.ref }}
         run: |
           set +e
-          bash shell/check_storage_layout.sh
+          bash shell/check_storage_layout.sh "$BASE_REF"
           status=$?
           set -e
           case $status in
