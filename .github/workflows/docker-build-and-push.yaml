@@ -10,11 +10,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  packages: write
   contents: read
+  actions: read
 
 jobs:
+  qualify:
+    uses: ./.github/workflows/qualify-publication.yml
+
   docker-ghcr-push:
+    needs: qualify
+    permissions:
+      packages: write
+      contents: read
     uses: phylaxsystems/actions/.github/workflows/release-docker-ghcr.yaml@main
     with:
       rust-binary-name: contracts-utils-${{ github.ref_name }}

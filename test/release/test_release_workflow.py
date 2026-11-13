@@ -1,14 +1,34 @@
+import copy
 import json
+import os
 import re
+import subprocess
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class ReleaseWorkflowTest(unittest.TestCase):
+    def test_publishers_depend_on_read_only_qualification(self):
+        workflows = ROOT / ".github" / "workflows"
+        for filename, entry in (
+            ("release.yml", "create-artifacts"),
+            ("docker-build-and-push.yaml", "docker-ghcr-push"),
+        ):
+            workflow = (workflows / filename).read_text()
+            self.assertIn("uses: ./.github/workflows/qualify-publication.yml", workflow)
+            job = workflow.split(f"  {entry}:\n", 1)[1].split("\n  release-", 1)[0]
+            self.assertIn("needs: qualify", job)
+            self.assertNotIn("if:", job)
+        qualification = (workflows / "qualify-publication.yml").read_text()
+        self.assertNotIn(": write", qualification)
+        self.assertIn("actions: read", qualification)
+        self.assertIn("ref: ${{ github.sha }}", qualification)
+        self.assertIn("run: bash shell/qualify_release.sh", qualification)
+
     def test_artifacts_are_verified_before_upload(self):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
         artifact_job = workflow.split("  create-artifacts:\n", 1)[1].split(
@@ -229,6 +249,189 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
         self.assertEqual(package["publishConfig"]["access"], "public")
         self.assertIs(package["publishConfig"]["provenance"], True)
+
+
+class PublicationQualificationTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.directory = Path(temporary.name)
+        self.sha = "a" * 40
+        self.ci_run = {
+            "id": 42,
+            "run_number": 19,
+            "run_attempt": 2,
+            "head_sha": self.sha,
+            "head_branch": "main",
+            "head_repository": {"full_name": "example/contracts"},
+            "event": "push",
+            "path": ".github/workflows/solidity-test.yml",
+            "status": "completed",
+            "conclusion": "success",
+            "html_url": "https://github.com/example/contracts/actions/runs/42",
+        }
+        self.jobs = [
+            {
+                "jobs": [
+                    {
+                        "name": name,
+                        "head_sha": self.sha,
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                    for name in (
+                        "release-config",
+                        "contract-compatibility",
+                        "rust-bindings",
+                        "rust-bindings-msrv",
+                    )
+                ]
+            }
+        ]
+        fake_gh = self.directory / "gh"
+        fake_gh.write_text("""#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+path = Path(os.environ["FIXTURE"])
+fixture = json.loads(path.read_text())
+if fixture.get("denied"):
+    sys.exit(1)
+if sys.argv[1:3] == ["run", "watch"]:
+    sys.exit(fixture.get("watch_exit", 0))
+endpoint = next(arg for arg in sys.argv if arg.startswith("repos/"))
+if "/workflows/" in endpoint:
+    result = fixture.get("final_listing", fixture["listing"]) if fixture.get("listed") else fixture["listing"]
+    fixture["listed"] = True
+elif "/jobs?" in endpoint:
+    if "/attempts/2/" not in endpoint:
+        sys.exit(1)
+    result = fixture["jobs"]
+else:
+    result = fixture["runs"][endpoint.rsplit("/", 1)[1]]
+    if fixture.get("read_run"):
+        result = fixture.get("final_run", result)
+    fixture["read_run"] = True
+path.write_text(json.dumps(fixture))
+print(json.dumps(result))
+""")
+        fake_gh.chmod(0o755)
+        sleep = self.directory / "sleep"
+        sleep.write_text("#!/bin/sh\nexit 0\n")
+        sleep.chmod(0o755)
+
+    def check(self, *, run=None, jobs=None, listing=None, **extra):
+        run = self.ci_run if run is None else run
+        if listing is None:
+            listing = {"total_count": 1, "workflow_runs": [run]}
+        fixture = self.directory / "fixture.json"
+        fixture.write_text(
+            json.dumps(
+                {
+                    "listing": listing,
+                    "runs": {
+                        str(item["id"]): item
+                        for item in listing.get("workflow_runs", [])
+                    },
+                    "jobs": self.jobs if jobs is None else jobs,
+                    **extra,
+                }
+            )
+        )
+        return subprocess.run(
+            ["bash", str(ROOT / "shell" / "qualify_release.sh")],
+            env={
+                **os.environ,
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "FIXTURE": str(fixture),
+                "GITHUB_SHA": self.sha,
+                "GITHUB_REPOSITORY": "example/contracts",
+                "GITHUB_STEP_SUMMARY": "",
+            },
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=15,
+            check=False,
+        )
+
+    def test_successful_exact_commit_on_either_publishing_branch(self):
+        for branch in ("main", "linea"):
+            with self.subTest(branch=branch):
+                run = {**self.ci_run, "head_branch": branch}
+                # Real API pagination wraps pages; required jobs can span them.
+                jobs = [
+                    {"jobs": self.jobs[0]["jobs"][:2]},
+                    {"jobs": self.jobs[0]["jobs"][2:]},
+                ]
+                result = self.check(run=run, jobs=jobs)
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertIn(f"Qualified source {self.sha}", result.stdout)
+                self.assertIn("/42/attempts/2", result.stdout)
+
+    def test_wrong_source_or_unsuccessful_run_cannot_qualify(self):
+        mutations = {
+            "head_sha": ["b" * 40],
+            "head_branch": ["feature"],
+            "head_repository": [{"full_name": "fork/contracts"}],
+            "event": ["pull_request", "workflow_dispatch"],
+            "path": [".github/workflows/other.yml"],
+            "status": ["in_progress"],
+            "conclusion": ["failure", "cancelled", "skipped", None],
+        }
+        for field, values in mutations.items():
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    result = self.check(run={**self.ci_run, field: value})
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+
+    def test_successful_workflow_cannot_hide_missing_or_skipped_gate(self):
+        for field, value in (
+            ("conclusion", "skipped"),
+            ("conclusion", "failure"),
+            ("status", "queued"),
+            ("head_sha", "b" * 40),
+            ("name", "renamed-contract-gate"),
+        ):
+            with self.subTest(field=field, value=value):
+                jobs = copy.deepcopy(self.jobs)
+                jobs[0]["jobs"][1][field] = value
+                self.assertNotEqual(self.check(jobs=jobs).returncode, 0)
+        self.assertNotEqual(self.check(jobs=[{"jobs": []}]).returncode, 0)
+
+    def test_newer_failure_supersedes_older_success(self):
+        failed = {**self.ci_run, "id": 43, "run_number": 20, "conclusion": "failure"}
+        result = self.check(
+            run=failed,
+            listing={"total_count": 2, "workflow_runs": [self.ci_run, failed]},
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+
+    def test_missing_partial_denied_and_failed_watch_fail_closed(self):
+        for overrides in (
+            {"listing": {"total_count": 0, "workflow_runs": []}},
+            {"listing": {"total_count": 101, "workflow_runs": [self.ci_run]}},
+            {"listing": {}},
+            {"denied": True},
+            {"watch_exit": 1},
+        ):
+            with self.subTest(overrides=overrides):
+                result = self.check(**overrides)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+
+    def test_run_or_attempt_superseded_during_qualification_is_rejected(self):
+        newer = {**self.ci_run, "id": 43, "run_number": 20}
+        for change in (
+            {
+                "final_listing": {
+                    "total_count": 2,
+                    "workflow_runs": [self.ci_run, newer],
+                }
+            },
+            {"final_run": {**self.ci_run, "run_attempt": 3}},
+            {"final_run": {**self.ci_run, "status": "in_progress"}},
+        ):
+            with self.subTest(change=change):
+                self.assertNotEqual(self.check(**change).returncode, 0)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ name: Solidity Test CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, linea]
   pull_request:
 
 jobs:
@@ -12,6 +12,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test release configuration
         run: python3 test/release/test_release_workflow.py
+      - name: Test storage compatibility gate
+        run: python3 test/shell/test_storage_layout.py
 
   rust-bindings:
     runs-on: ubuntu-latest
@@ -84,7 +86,7 @@ jobs:
         run: forge build
 
       # The ABI the change has to stay compatible with: for a pull request the
-      # commit it branched from, for a push to main the tip before the push.
+      # commit it branched from, for a branch push the tip before the push.
       #
       # Never fall back to origin/main on a push - on main that IS the commit
       # under test, so the comparison would be HEAD against HEAD and the job
@@ -147,9 +149,11 @@ jobs:
 
       - name: Check storage layout
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        env:
+          BASE_REF: ${{ steps.base.outputs.ref }}
         run: |
           set +e
-          bash shell/check_storage_layout.sh
+          bash shell/check_storage_layout.sh "$BASE_REF"
           status=$?
           set -e
           case $status in
