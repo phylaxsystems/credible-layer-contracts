@@ -1,0 +1,22 @@
+name: Qualify contract publication
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require exact-commit contract CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash shell/qualify_release.sh

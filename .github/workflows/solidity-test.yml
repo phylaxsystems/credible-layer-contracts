@@ -2,7 +2,7 @@ name: Solidity Test CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, linea]
   pull_request:
 
 jobs:
@@ -86,7 +86,7 @@ jobs:
         run: forge build
 
       # The ABI the change has to stay compatible with: for a pull request the
-      # commit it branched from, for a push to main the tip before the push.
+      # commit it branched from, for a branch push the tip before the push.
       #
       # Never fall back to origin/main on a push - on main that IS the commit
       # under test, so the comparison would be HEAD against HEAD and the job
