@@ -77,6 +77,8 @@ contract StateOracleAdministrationTest is ProxyHelper {
 
     /// @notice Each fresh oracle has a distinct controller and exactly one proposer/executor.
     function test_controllerHasOnlyFixedMechanicalAuthority() public {
+        assertLe(address(implementation).code.length, 24_576, "Implementation must satisfy EIP-170");
+        assertLe(type(StateOracle).creationCode.length + 32, 49_152, "Implementation must satisfy EIP-3860");
         assertNotEq(address(controller), address(peer.timelock()));
         assertEq(controller.ORACLE(), address(oracle));
         assertEq(peer.timelock().ORACLE(), address(peer));
@@ -469,5 +471,102 @@ contract StateOracleAdministrationTest is ProxyHelper {
         _execute(oracle, id);
         assertTrue(oracle.adminVerifiers(verifier));
         assertFalse(peer.adminVerifiers(verifier));
+    }
+
+    /// @notice Account edits and admission toggles wait D even when enforcement is disabled.
+    function test_whitelistChangesWaitEvenWhileDisabledAndTogglesSerialize() public {
+        address caller = address(0xB0B);
+        vm.prank(governor);
+        oracle.addToWhitelist(caller);
+        bytes32 add = oracle.latestAdministrationOperation();
+        assertFalse(oracle.whitelist(caller));
+        vm.prank(governor);
+        oracle.enableWhitelist();
+        bytes32 enable = oracle.latestAdministrationOperation();
+        vm.prank(governor);
+        vm.expectPartialRevert(StateOracleAdministration.AdministrationOperationPending.selector);
+        oracle.enableWhitelist();
+        vm.prank(governor);
+        vm.expectRevert(StateOracle.WhitelistAlreadyDisabled.selector);
+        oracle.disableWhitelist();
+        vm.warp(oracle.administrationOperation(enable).readyAt - 1);
+        vm.expectPartialRevert(TimelockController.TimelockUnexpectedOperationState.selector);
+        oracle.executeAdministration(enable);
+        vm.expectPartialRevert(TimelockController.TimelockUnexpectedOperationState.selector);
+        oracle.executeAdministration(add);
+        _execute(oracle, enable);
+        assertFalse(oracle.isWhitelisted(caller));
+        oracle.executeAdministration(add);
+        assertTrue(oracle.isWhitelisted(caller));
+
+        vm.prank(governor);
+        oracle.disableWhitelist();
+        bytes32 disable = oracle.latestAdministrationOperation();
+        assertTrue(oracle.whitelistEnabled());
+        vm.warp(oracle.administrationOperation(disable).readyAt - 1);
+        vm.expectPartialRevert(TimelockController.TimelockUnexpectedOperationState.selector);
+        oracle.executeAdministration(disable);
+        _execute(oracle, disable);
+        vm.prank(governor);
+        oracle.removeFromWhitelist(caller);
+        bytes32 remove = oracle.latestAdministrationOperation();
+        assertTrue(oracle.whitelist(caller));
+        vm.warp(oracle.administrationOperation(remove).readyAt - 1);
+        vm.expectPartialRevert(TimelockController.TimelockUnexpectedOperationState.selector);
+        oracle.executeAdministration(remove);
+        _execute(oracle, remove);
+        assertFalse(oracle.whitelist(caller));
+        assertTrue(oracle.isWhitelisted(caller));
+        vm.expectPartialRevert(TimelockController.TimelockUnexpectedOperationState.selector);
+        oracle.executeAdministration(add);
+        vm.prank(governor);
+        oracle.enableWhitelist();
+        executeLast(oracle);
+        assertFalse(oracle.isWhitelisted(caller));
+    }
+
+    /// @notice Every cap change waits D and a later delay change cannot alter its deadline.
+    function test_capacityChangesWaitAndExistingDeadlinesDoNotMove() public {
+        uint16[3] memory values = [uint16(40), 0, 1];
+        for (uint256 i; i < values.length; ++i) {
+            uint16 beforeValue = oracle.maxAssertionsPerAA();
+            vm.prank(governor);
+            oracle.setMaxAssertionsPerAA(values[i]);
+            bytes32 id = oracle.latestAdministrationOperation();
+            assertEq(oracle.maxAssertionsPerAA(), beforeValue);
+            vm.warp(oracle.administrationOperation(id).readyAt - 1);
+            vm.expectPartialRevert(TimelockController.TimelockUnexpectedOperationState.selector);
+            oracle.executeAdministration(id);
+            _execute(oracle, id);
+            assertEq(oracle.maxAssertionsPerAA(), values[i]);
+        }
+        vm.prank(governor);
+        bytes32 increase = oracle.scheduleDelayUpdate(5 days);
+        vm.prank(governor);
+        oracle.setMaxAssertionsPerAA(0);
+        bytes32 cap = oracle.latestAdministrationOperation();
+        uint256 deadline = oracle.administrationOperation(cap).readyAt;
+        _execute(oracle, increase);
+        assertEq(controller.getTimestamp(cap), deadline);
+        oracle.executeAdministration(cap);
+        assertEq(oracle.maxAssertionsPerAA(), 0);
+    }
+
+    /// @notice Direct callbacks and mixed proposal/callback batches cannot bypass configuration delays.
+    function test_configurationCallbacksAndBatchesCannotSkipDelay() public {
+        vm.expectRevert(StateOracleAdministration.CallerNotTimelock.selector);
+        oracle.applyWhitelistEnabled(true);
+        vm.expectRevert(StateOracleAdministration.CallerNotTimelock.selector);
+        oracle.applyWhitelistAccount(governor, true);
+        vm.expectRevert(StateOracleAdministration.CallerNotTimelock.selector);
+        oracle.applyMaxAssertionsPerAA(0);
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(oracle.setMaxAssertionsPerAA, (0));
+        calls[1] = abi.encodeCall(oracle.applyMaxAssertionsPerAA, (0));
+        vm.prank(governor);
+        vm.expectPartialRevert(Batch.BatchError.selector);
+        oracle.batch(calls);
+        assertEq(oracle.maxAssertionsPerAA(), 20);
+        assertEq(oracle.latestAdministrationOperation(), bytes32(0));
     }
 }

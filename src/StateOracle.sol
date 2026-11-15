@@ -351,24 +351,39 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         _removeAssertion(contractAddress, assertionId);
     }
 
-    /// @notice Enables the whitelist
+    /// @notice Schedules enabling the whitelist after D
     function enableWhitelist() external onlyGovernance {
         require(!whitelistEnabled, WhitelistAlreadyEnabled());
-        whitelistEnabled = true;
-        emit WhitelistEnabled();
+        _scheduleAdministration(
+            keccak256("whitelistEnabled"), address(this), abi.encodeCall(this.applyWhitelistEnabled, (true))
+        );
     }
 
-    /// @notice Disables the whitelist
+    /// @notice Schedules disabling the whitelist after D
     function disableWhitelist() external onlyGovernance {
         require(whitelistEnabled, WhitelistAlreadyDisabled());
-        whitelistEnabled = false;
-        emit WhitelistDisabled();
+        _scheduleAdministration(
+            keccak256("whitelistEnabled"), address(this), abi.encodeCall(this.applyWhitelistEnabled, (false))
+        );
     }
 
-    /// @notice Adds an account to the whitelist
+    /// @notice Applies a matured caller-whitelist toggle through this oracle's timelock.
+    /// @param enabled Whether caller admission checks become enabled.
+    function applyWhitelistEnabled(bool enabled) external onlyTimelock {
+        whitelistEnabled = enabled;
+        if (enabled) emit WhitelistEnabled();
+        else emit WhitelistDisabled();
+    }
+
+    /// @notice Schedules adding a caller after D, even while enforcement is disabled
     /// @param account The address to add
     function addToWhitelist(address account) external onlyOperator {
-        _addToWhitelist(account);
+        require(!whitelist[account], AlreadyWhitelisted(account));
+        _scheduleAdministration(
+            keccak256(abi.encode("whitelist", account)),
+            address(this),
+            abi.encodeCall(this.applyWhitelistAccount, (account, true))
+        );
     }
 
     /// @notice Admits a caller during initialization or an authorized effective change.
@@ -379,12 +394,29 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         emit AddedToWhitelist(account);
     }
 
-    /// @notice Removes an account from the whitelist
+    /// @notice Schedules removing a caller after D, even while enforcement is disabled
     /// @param account The address to remove
     function removeFromWhitelist(address account) external onlyOperator {
         require(whitelist[account], AccountNotWhitelisted(account));
-        whitelist[account] = false;
-        emit RemovedFromWhitelist(account);
+        _scheduleAdministration(
+            keccak256(abi.encode("whitelist", account)),
+            address(this),
+            abi.encodeCall(this.applyWhitelistAccount, (account, false))
+        );
+    }
+
+    /// @notice Applies a matured caller-admission change through this oracle's timelock.
+    /// @dev Membership remains configurable while enforcement is disabled, with the same delay.
+    /// @param account Caller whose membership changes.
+    /// @param allowed True to add, false to remove.
+    function applyWhitelistAccount(address account, bool allowed) external onlyTimelock {
+        if (allowed) {
+            _addToWhitelist(account);
+        } else {
+            require(whitelist[account], AccountNotWhitelisted(account));
+            whitelist[account] = false;
+            emit RemovedFromWhitelist(account);
+        }
     }
 
     /// @notice Checks if an account is allowed to perform whitelisted actions
@@ -578,13 +610,32 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         return daVerifiers.isRegistered(daVerifier);
     }
 
-    /// @notice Sets the maximum number of assertions per assertion adopter
+    /// @notice Schedules an assertion capacity change after D, including zero and decreases
     /// @param _maxAssertionsPerAA The maximum number of assertions per assertion adopter
     function setMaxAssertionsPerAA(uint16 _maxAssertionsPerAA) external onlyGovernance {
-        _setMaxAssertionsPerAA(_maxAssertionsPerAA);
+        _scheduleAdministration(
+            keccak256("maxAssertionsPerAA"),
+            address(this),
+            abi.encodeCall(this.applyMaxAssertionsPerAA, (_maxAssertionsPerAA))
+        );
     }
 
+    /// @notice Applies a matured capacity change through this oracle's timelock.
+    /// @dev A decrease does not remove assertions already registered above the new limit.
+    /// @param maximum New per-adopter cap, including zero.
+    function applyMaxAssertionsPerAA(uint16 maximum) external onlyTimelock {
+        _setMaxAssertionsPerAA(maximum);
+    }
+
+    /// @notice Emitted when a capacity change becomes effective.
+    /// @param previousMaximum Previous per-adopter cap.
+    /// @param newMaximum New per-adopter cap.
+    event MaxAssertionsPerAAChanged(uint16 previousMaximum, uint16 newMaximum);
+
+    /// @notice Applies the cap during fresh initialization or a matured proposal and emits the effective change.
+    /// @param _maxAssertionsPerAA New per-adopter assertion cap.
     function _setMaxAssertionsPerAA(uint16 _maxAssertionsPerAA) internal {
+        emit MaxAssertionsPerAAChanged(maxAssertionsPerAA, _maxAssertionsPerAA);
         maxAssertionsPerAA = _maxAssertionsPerAA;
     }
 }

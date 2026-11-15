@@ -11,8 +11,10 @@ import {AdminVerifierOwner} from "../../src/verification/admin/AdminVerifierOwne
 import {DAVerifierECDSA} from "../../src/verification/da/DAVerifierECDSA.sol";
 import {DAVerifierOnChain} from "../../src/verification/da/DAVerifierOnChain.sol";
 import {OwnableAdopter} from "../utils/Adopter.sol";
+import {ProxyHelper} from "../utils/ProxyHelper.t.sol";
 
-contract DeployCoreWithStagingIntegrationTest is Test {
+/// @notice Exercises independently configured oracle proxies with shared verifier infrastructure.
+contract DeployCoreWithStagingIntegrationTest is ProxyHelper {
     address public admin = address(0x1);
     address public daProver = address(0x2);
     address public user = address(0x3);
@@ -23,6 +25,7 @@ contract DeployCoreWithStagingIntegrationTest is Test {
     DAVerifierECDSA public daVerifier;
     DAVerifierOnChain public onChainVerifier;
 
+    /// @notice Initializes two fresh proxies and their independent administration timelocks.
     function setUp() public {
         vm.deal(admin, 100 ether);
 
@@ -103,16 +106,20 @@ contract DeployCoreWithStagingIntegrationTest is Test {
         assertEq(stagingOracle.ASSERTION_TIMELOCK_BLOCKS(), 10);
     }
 
+    /// @notice Each oracle executes its own delayed caller admission.
     function test_AddToWhitelistOnBothOracles() public {
         vm.startPrank(admin);
         productionOracle.addToWhitelist(user);
         stagingOracle.addToWhitelist(user);
         vm.stopPrank();
+        executeLast(productionOracle);
+        executeLast(stagingOracle);
 
         assertTrue(productionOracle.isWhitelisted(user));
         assertTrue(stagingOracle.isWhitelisted(user));
     }
 
+    /// @notice One adopter can register on both oracles after each admission delay.
     function test_RegisterContractOnBothOracles() public {
         // Deploy Ownable contract
         vm.prank(user);
@@ -123,6 +130,8 @@ contract DeployCoreWithStagingIntegrationTest is Test {
         productionOracle.addToWhitelist(user);
         stagingOracle.addToWhitelist(user);
         vm.stopPrank();
+        executeLast(productionOracle);
+        executeLast(stagingOracle);
 
         // Register on both
         vm.startPrank(user);
@@ -135,12 +144,15 @@ contract DeployCoreWithStagingIntegrationTest is Test {
         assertEq(stagingOracle.getManager(address(adopter)), user);
     }
 
+    /// @notice Delayed caller admission enables registration using the shared admin verifier.
     function test_FullWorkflow_WhitelistAndRegisterOnBothOracles() public {
         // Whitelist user on both oracles
         vm.startPrank(admin);
         productionOracle.addToWhitelist(user);
         stagingOracle.addToWhitelist(user);
         vm.stopPrank();
+        executeLast(productionOracle);
+        executeLast(stagingOracle);
 
         assertTrue(productionOracle.isWhitelisted(user), "User not whitelisted on production");
         assertTrue(stagingOracle.isWhitelisted(user), "User not whitelisted on staging");
@@ -189,6 +201,7 @@ contract DeployCoreWithStagingIntegrationTest is Test {
         assertTrue(stagingOracle.isDAVerifierRegistered(IDAVerifier(address(daVerifier))));
     }
 
+    /// @notice Both admitted oracle managers can use the shared on-chain DA verifier.
     function test_AddAssertionWithOnChainDAVerifierOnBothOracles() public {
         // Deploy Ownable contract
         vm.prank(user);
@@ -199,6 +212,8 @@ contract DeployCoreWithStagingIntegrationTest is Test {
         productionOracle.addToWhitelist(user);
         stagingOracle.addToWhitelist(user);
         vm.stopPrank();
+        executeLast(productionOracle);
+        executeLast(stagingOracle);
 
         vm.startPrank(user);
         productionOracle.registerAssertionAdopter(address(adopter), adminVerifier, "");
