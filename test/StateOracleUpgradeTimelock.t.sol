@@ -2,6 +2,8 @@
 pragma solidity ^0.8.28;
 
 import {StateOracle} from "../src/StateOracle.sol";
+import {StateOracleAccessControl} from "../src/StateOracleAccessControl.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {StateOracleTimelock} from "../src/StateOracleTimelock.sol";
 import {StateOracleUpgradeTimelock} from "../src/StateOracleUpgradeTimelock.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
@@ -13,14 +15,29 @@ import {IDAVerifier} from "../src/interfaces/IDAVerifier.sol";
 import {ProxyHelper} from "./utils/ProxyHelper.t.sol";
 
 /// @notice Test implementation for a later authenticated migration.
-contract UpgradeMigrationOracle is StateOracle {
+/// @dev Retains the oracle's access-control layout and namespace, but omits assertion APIs to keep
+/// this migration-only fixture deployable under EIP-170. Full-oracle upgrades are tested separately.
+contract UpgradeMigrationOracle is StateOracleAccessControl {
+    /// @notice Assertion lifecycle configuration preserved during the test upgrade.
+    uint256 public immutable ASSERTION_TIMELOCK_BLOCKS;
+
     /// @notice Preserves the oracle's assertion lifecycle configuration.
     /// @param blocks_ Assertion lifecycle delay in blocks.
-    constructor(uint256 blocks_) StateOracle(blocks_) {}
+    constructor(uint256 blocks_) Ownable(msg.sender) {
+        ASSERTION_TIMELOCK_BLOCKS = blocks_;
+        _transferOwnership(address(0));
+        _disableInitializers();
+    }
 
     /// @notice Exercises a replay-protected migration through the proxy's own admin.
     function migrateV3() external reinitializer(3) {
         require(msg.sender == ERC1967Utils.getAdmin(), "Wrong migration caller");
+    }
+
+    /// @notice Simulates migration failure after the version guard has written to proxy storage.
+    function migrateV3AndRevert() external reinitializer(3) {
+        require(msg.sender == ERC1967Utils.getAdmin(), "Wrong migration caller");
+        revert("Migration failed");
     }
 
     /// @notice Identifies the test implementation after upgrade.
@@ -63,6 +80,7 @@ contract StateOracleUpgradeTimelockTest is ProxyHelper {
         peerAdmin.transferOwnership(address(upgrades));
         vm.stopPrank();
         next = new UpgradeMigrationOracle(75);
+        assertLe(address(next).code.length, 24_576, "Migration fixture must satisfy EIP-170");
         upgradeData = abi.encodeCall(
             ProxyAdmin.upgradeAndCall,
             (ITransparentUpgradeableProxy(address(oracle)), address(next), abi.encodeCall(next.migrateV3, ()))

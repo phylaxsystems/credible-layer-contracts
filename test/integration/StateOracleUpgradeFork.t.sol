@@ -261,6 +261,70 @@ contract StateOracleUpgradeForkTest is Test {
         _execute(PROD_ADMIN, payload, bytes32("production"), false);
     }
 
+    /// @notice Verifies the Safe can execute independently queued upgrades in one atomic batch.
+    function test_forkPairedLaterUpgradesSucceedAtomically() public {
+        _pairedLaterUpgrades(false);
+    }
+
+    /// @notice Verifies failure in the second migration restores both implementations and queue states.
+    function test_forkSecondLaterUpgradeFailureRollsBackPair() public {
+        _pairedLaterUpgrades(true);
+    }
+
+    /// @notice Executes a paired upgrade using distinct proposal timestamps.
+    /// @param revertSecond Whether the second migration must revert and undo the whole batch.
+    function _pairedLaterUpgrades(bool revertSecond) internal {
+        _migration(false);
+        UpgradeMigrationOracle prodNext = new UpgradeMigrationOracle(75);
+        UpgradeMigrationOracle alertNext = new UpgradeMigrationOracle(25);
+        bytes memory alertMigration = abi.encodeCall(alertNext.migrateV3, ());
+        if (revertSecond) {
+            // Revert in the second migration after its reinitializer writes the version slot.
+            alertMigration = abi.encodeCall(alertNext.migrateV3AndRevert, ());
+        }
+        bytes memory prodPayload = abi.encodeCall(
+            ProxyAdmin.upgradeAndCall,
+            (ITransparentUpgradeableProxy(PRODUCTION), address(prodNext), abi.encodeCall(prodNext.migrateV3, ()))
+        );
+        bytes memory alertPayload = abi.encodeCall(
+            ProxyAdmin.upgradeAndCall, (ITransparentUpgradeableProxy(ALERTING), address(alertNext), alertMigration)
+        );
+        bytes32 prodId = _schedule(PROD_ADMIN, prodPayload, bytes32("production"));
+        // Distinct scheduling times ensure both operations, not only the first, have matured.
+        vm.warp(block.timestamp + 1 hours);
+        bytes32 alertId = _schedule(ALERT_ADMIN, alertPayload, bytes32("alerting"));
+        vm.warp(upgrades.getTimestamp(alertId));
+        assertTrue(upgrades.isOperationReady(prodId));
+        assertTrue(upgrades.isOperationReady(alertId));
+        bytes memory calls = bytes.concat(
+            _transaction(
+                address(upgrades),
+                abi.encodeCall(upgrades.execute, (PROD_ADMIN, 0, prodPayload, bytes32(0), bytes32("production")))
+            ),
+            _transaction(
+                address(upgrades),
+                abi.encodeCall(upgrades.execute, (ALERT_ADMIN, 0, alertPayload, bytes32(0), bytes32("alerting")))
+            )
+        );
+        _safeCall(MULTISEND, abi.encodeWithSignature("multiSend(bytes)", calls), 1, !revertSecond);
+        assertEq(
+            vm.load(PRODUCTION, ERC1967Utils.IMPLEMENTATION_SLOT),
+            bytes32(uint256(uint160(revertSecond ? address(productionImplementation) : address(prodNext))))
+        );
+        assertEq(
+            vm.load(ALERTING, ERC1967Utils.IMPLEMENTATION_SLOT),
+            bytes32(uint256(uint160(revertSecond ? address(alertingImplementation) : address(alertNext))))
+        );
+        assertEq(uint256(vm.load(PRODUCTION, VERSION_SLOT)), revertSecond ? 4 : 6);
+        assertEq(uint256(vm.load(ALERTING, VERSION_SLOT)), revertSecond ? 4 : 6);
+        assertEq(upgrades.isOperationDone(prodId), !revertSecond);
+        assertEq(upgrades.isOperationDone(alertId), !revertSecond);
+        assertEq(upgrades.isOperationReady(prodId), revertSecond);
+        assertEq(upgrades.isOperationReady(alertId), revertSecond);
+        assertEq(ProxyAdmin(PROD_ADMIN).owner(), address(upgrades));
+        assertEq(ProxyAdmin(ALERT_ADMIN).owner(), address(upgrades));
+    }
+
     /// @notice Checks migration touched only implementation/version slots and the ERC-7201 controller reference.
     /// @param proxy Oracle proxy whose recorded writes are checked.
     function _assertMigrationWrites(address proxy) internal {
