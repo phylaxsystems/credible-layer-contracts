@@ -11,6 +11,9 @@ import {StateOracleTimelock} from "./StateOracleTimelock.sol";
 /// @notice Base contract providing role-based access control for StateOracle
 /// @dev Implements a five-tier role hierarchy with owner/DEFAULT_ADMIN_ROLE invariant
 /// @dev Invariant: owner() always has DEFAULT_ADMIN_ROLE exclusively (1:1 coupling)
+/// @dev Named and generic role mutations schedule proposals, not effective changes. Execute the
+/// emitted operation ID after D. Self-renunciation authenticates the account before scheduling.
+/// Ownership acceptance additionally requires the exact nomination's matured authorization.
 ///
 /// @dev Role Hierarchy:
 /// ```
@@ -141,79 +144,79 @@ abstract contract StateOracleAccessControl is Ownable2Step, AccessControl, State
         }
     }
 
-    /// @notice Grants the governance role to an address
+    /// @notice Queues a governance role grant after the administration delay.
     /// @dev Only callable by owner (who has DEFAULT_ADMIN_ROLE)
     /// @dev Governance role can manage protocol parameters (whitelist, verifiers, etc.)
     /// @param governance The address to grant the governance role to
     function grantGovernanceRole(address governance) external onlyOwner {
-        _grantRole(GOVERNANCE_ROLE, governance);
+        _queueRoleChange(GOVERNANCE_ROLE, governance, true);
     }
 
-    /// @notice Revokes the governance role from an address
+    /// @notice Queues a governance role revocation after the administration delay.
     /// @dev Only callable by owner (who has DEFAULT_ADMIN_ROLE)
     /// @param governance The address to revoke the governance role from
     function revokeGovernanceRole(address governance) external onlyOwner {
-        _revokeRole(GOVERNANCE_ROLE, governance);
+        _queueRoleChange(GOVERNANCE_ROLE, governance, false);
     }
 
-    /// @notice Grants the guardian admin role to an address
+    /// @notice Queues a guardian-admin role grant after the administration delay.
     /// @dev Only callable by owner (who has DEFAULT_ADMIN_ROLE)
     /// @dev Guardian admins can manage the guardian role (grant/revoke guardians)
     /// @param guardianAdmin The address to grant the guardian admin role to
     function grantGuardianAdminRole(address guardianAdmin) external onlyOwner {
-        _grantRole(GUARDIAN_ADMIN_ROLE, guardianAdmin);
+        _queueRoleChange(GUARDIAN_ADMIN_ROLE, guardianAdmin, true);
     }
 
-    /// @notice Revokes the guardian admin role from an address
+    /// @notice Queues a guardian-admin role revocation after the administration delay.
     /// @dev Only callable by owner (who has DEFAULT_ADMIN_ROLE)
     /// @param guardianAdmin The address to revoke the guardian admin role from
     function revokeGuardianAdminRole(address guardianAdmin) external onlyOwner {
-        _revokeRole(GUARDIAN_ADMIN_ROLE, guardianAdmin);
+        _queueRoleChange(GUARDIAN_ADMIN_ROLE, guardianAdmin, false);
     }
 
-    /// @notice Grants the guardian role to an address
+    /// @notice Queues a guardian role grant after the administration delay.
     /// @dev Only callable by guardian admins
     /// @dev Guardians can perform emergency defensive actions (remove assertions, revoke managers)
     /// @param guardian The address to grant the guardian role to
     function grantGuardianRole(address guardian) external onlyRole(GUARDIAN_ADMIN_ROLE) {
-        _grantRole(GUARDIAN_ROLE, guardian);
+        _queueRoleChange(GUARDIAN_ROLE, guardian, true);
     }
 
-    /// @notice Revokes the guardian role from an address
+    /// @notice Queues a guardian role revocation after the administration delay.
     /// @dev Only callable by guardian admins
     /// @param guardian The address to revoke the guardian role from
     function revokeGuardianRole(address guardian) external onlyRole(GUARDIAN_ADMIN_ROLE) {
-        _revokeRole(GUARDIAN_ROLE, guardian);
+        _queueRoleChange(GUARDIAN_ROLE, guardian, false);
     }
 
-    /// @notice Grants the operator admin role to an address
+    /// @notice Queues an operator-admin role grant after the administration delay.
     /// @dev Only callable by owner (who has DEFAULT_ADMIN_ROLE)
     /// @dev Operator admins can manage the operator role (grant/revoke operators)
     /// @param operatorAdmin The address to grant the operator admin role to
     function grantOperatorAdminRole(address operatorAdmin) external onlyOwner {
-        _grantRole(OPERATOR_ADMIN_ROLE, operatorAdmin);
+        _queueRoleChange(OPERATOR_ADMIN_ROLE, operatorAdmin, true);
     }
 
-    /// @notice Revokes the operator admin role from an address
+    /// @notice Queues an operator-admin role revocation after the administration delay.
     /// @dev Only callable by owner (who has DEFAULT_ADMIN_ROLE)
     /// @param operatorAdmin The address to revoke the operator admin role from
     function revokeOperatorAdminRole(address operatorAdmin) external onlyOwner {
-        _revokeRole(OPERATOR_ADMIN_ROLE, operatorAdmin);
+        _queueRoleChange(OPERATOR_ADMIN_ROLE, operatorAdmin, false);
     }
 
-    /// @notice Grants the operator role to an address
+    /// @notice Queues an operator role grant after the administration delay.
     /// @dev Only callable by operator admins
     /// @dev Operators can manage the whitelist (add/remove addresses)
     /// @param operator The address to grant the operator role to
     function grantOperatorRole(address operator) external onlyRole(OPERATOR_ADMIN_ROLE) {
-        _grantRole(OPERATOR_ROLE, operator);
+        _queueRoleChange(OPERATOR_ROLE, operator, true);
     }
 
-    /// @notice Revokes the operator role from an address
+    /// @notice Queues an operator role revocation after the administration delay.
     /// @dev Only callable by operator admins
     /// @param operator The address to revoke the operator role from
     function revokeOperatorRole(address operator) external onlyRole(OPERATOR_ADMIN_ROLE) {
-        _revokeRole(OPERATOR_ROLE, operator);
+        _queueRoleChange(OPERATOR_ROLE, operator, false);
     }
 
     /// @notice Override _transferOwnership to also transfer DEFAULT_ADMIN_ROLE atomically
@@ -248,33 +251,109 @@ abstract contract StateOracleAccessControl is Ownable2Step, AccessControl, State
         super._transferOwnership(newOwner);
     }
 
-    /// @notice Override grantRole to prevent granting DEFAULT_ADMIN_ROLE to anyone
+    /// @notice Queues a role grant, rejecting independent DEFAULT_ADMIN_ROLE changes.
     /// @dev Maintains invariant: only owner() can have DEFAULT_ADMIN_ROLE
     /// @dev DEFAULT_ADMIN_ROLE can only be transferred via ownership transfer
     /// @param role The role to grant
     /// @param account The account to grant the role to
     function grantRole(bytes32 role, address account) public virtual override onlyRole(getRoleAdmin(role)) {
         require(role != DEFAULT_ADMIN_ROLE, CannotGrantDefaultAdminRole());
-        super.grantRole(role, account);
+        _queueRoleChange(role, account, true);
     }
 
-    /// @notice Override revokeRole to prevent revoking DEFAULT_ADMIN_ROLE from owner
+    /// @notice Queues a role revocation, preserving the owner's coupled DEFAULT_ADMIN_ROLE.
     /// @dev Maintains invariant: owner() must always have DEFAULT_ADMIN_ROLE
     /// @dev Allows revoking DEFAULT_ADMIN_ROLE from non-owners (e.g., during ownership transfer)
     /// @param role The role to revoke
     /// @param account The account to revoke the role from
     function revokeRole(bytes32 role, address account) public virtual override onlyRole(getRoleAdmin(role)) {
         require(role != DEFAULT_ADMIN_ROLE || account != owner(), CannotRevokeOwnerDefaultAdminRole());
-        super.revokeRole(role, account);
+        _queueRoleChange(role, account, false);
     }
 
-    /// @notice Override renounceRole to prevent owner from renouncing DEFAULT_ADMIN_ROLE
+    /// @notice Queues self-renunciation after the administration delay, except for the owner's coupled role.
     /// @dev Maintains invariant: owner() must keep DEFAULT_ADMIN_ROLE
     /// @dev Owner must use renounceOwnership() instead to give up both owner and role atomically
     /// @param role The role to renounce
     /// @param callerConfirmation Must be msg.sender (OpenZeppelin safety check)
     function renounceRole(bytes32 role, address callerConfirmation) public virtual override {
         require(role != DEFAULT_ADMIN_ROLE || callerConfirmation != owner(), CannotRenounceOwnerDefaultAdminRole());
-        super.renounceRole(role, callerConfirmation);
+        require(callerConfirmation == msg.sender, AccessControlBadConfirmation());
+        _queueRoleChange(role, callerConfirmation, false);
+    }
+
+    /// @notice Queues an authorized role change under a per-role/account resource lock.
+    /// @dev The caller must enforce proposer authority before invoking this helper.
+    /// @param role Role to change.
+    /// @param account Affected account.
+    /// @param grant True to grant, false to revoke.
+    function _queueRoleChange(bytes32 role, address account, bool grant) internal {
+        _scheduleAdministration(
+            keccak256(abi.encode("role", role, account)),
+            address(this),
+            abi.encodeCall(this.applyRoleChange, (role, account, grant))
+        );
+    }
+
+    /// @notice Applies only a matured, authenticated grant, revoke or self-renunciation.
+    /// @param role Role to change; ownership controls DEFAULT_ADMIN_ROLE separately.
+    /// @param account Affected account.
+    /// @param grant True to grant, false to revoke.
+    function applyRoleChange(bytes32 role, address account, bool grant) external onlyTimelock {
+        if (grant) {
+            require(role != DEFAULT_ADMIN_ROLE, CannotGrantDefaultAdminRole());
+            _grantRole(role, account);
+        } else {
+            require(role != DEFAULT_ADMIN_ROLE || account != owner(), CannotRevokeOwnerDefaultAdminRole());
+            _revokeRole(role, account);
+        }
+    }
+
+    /// @notice Nominates a recipient immediately, but acceptance requires this exact proposal to mature.
+    /// @dev One pending ownership operation at a time; zero-address cancellation is not supported.
+    /// @param newOwner Nominated successor, which must accept after the queued authorization executes.
+    function transferOwnership(address newOwner) public override onlyOwner {
+        require(newOwner != address(0), OwnableInvalidOwner(newOwner));
+        super.transferOwnership(newOwner);
+        _scheduleAdministration(
+            keccak256("ownership"), address(this), abi.encodeCall(this.authorizeOwnership, (newOwner))
+        );
+    }
+
+    /// @notice Lets the nominee accept only after its exact delayed authorization has executed.
+    /// @dev Ownership and DEFAULT_ADMIN_ROLE move together; inherited legacy nominations need a new proposal.
+    function acceptOwnership() public override {
+        require(msg.sender == pendingOwner() && msg.sender != address(0), OwnableUnauthorizedAccount(msg.sender));
+        StateOracleTimelock controller = timelock();
+        _requireAdministrationReady();
+        bytes32 id = controller.pendingAdministrationOperation(address(this), keccak256("ownership"));
+        require(
+            controller.isOperationDone(id)
+                && keccak256(controller.administrationOperation(address(this), id).data)
+                    == keccak256(abi.encodeCall(this.authorizeOwnership, (msg.sender))),
+            OwnershipNotReady()
+        );
+        super.acceptOwnership();
+    }
+
+    /// @notice Queues ownership renunciation after the current administration delay.
+    /// @dev Shares the ownership resource lock with nominations; effective execution clears both owner and role.
+    function renounceOwnership() public override onlyOwner {
+        _scheduleAdministration(
+            keccak256("ownership"), address(this), abi.encodeCall(this.authorizeOwnership, (address(0)))
+        );
+    }
+
+    /// @notice The exact pending nomination has not completed its delayed authorization.
+    error OwnershipNotReady();
+
+    /// @notice Matures a nomination, or executes a delayed ownership renunciation.
+    /// @param recipient Nominated owner, or zero to renounce ownership and its coupled role.
+    function authorizeOwnership(address recipient) external onlyTimelock {
+        if (recipient == address(0)) {
+            _transferOwnership(address(0));
+        } else {
+            require(pendingOwner() == recipient, OwnableUnauthorizedAccount(recipient));
+        }
     }
 }

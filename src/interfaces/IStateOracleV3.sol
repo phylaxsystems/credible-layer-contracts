@@ -4,6 +4,8 @@ pragma solidity ^0.8.28;
 /// @title IStateOracleV3
 /// @notice Consumer ABI for the oracle with per-oracle administration.
 /// @dev Assertion lifecycle delays use blocks; administration delays use timestamps.
+/// Role grants, revocations and renunciations queue changes; membership changes only after execution.
+/// Ownership nomination is immediate, but acceptance requires execution of its delayed authorization.
 interface IStateOracleV3 {
     /// @notice Exact queued administration payload, matching StateOracleTimelock.Operation.
     struct Operation {
@@ -84,6 +86,8 @@ interface IStateOracleV3 {
     /// @notice The caller is not authorized by ownership.
     /// @param account Unauthorized caller.
     error OwnableUnauthorizedAccount(address account);
+    /// @notice The exact ownership nomination has not completed its delayed authorization.
+    error OwnershipNotReady();
     /// @notice This oracle has not deployed its administration timelock.
     error TimelockNotInitialized();
     /// @notice The adopter reached its assertion capacity.
@@ -228,7 +232,7 @@ interface IStateOracleV3 {
     /// @notice Accepts a pending manager nomination as its nominee.
     /// @param contractAddress Adopter address.
     function acceptManagerTransfer(address contractAddress) external;
-    /// @notice Accepts a pending ownership transfer as its nominee.
+    /// @notice Accepts a pending ownership transfer as its nominee after delayed authorization executes.
     function acceptOwnership() external;
     /// @notice Adds an admin verifier under governance authorization.
     /// @param adminVerifier Verifier to add.
@@ -263,6 +267,11 @@ interface IStateOracleV3 {
     /// @param id Operation identifier.
     /// @return Exact payload, or an empty record if unknown.
     function administrationOperation(bytes32 id) external view returns (Operation memory);
+    /// @notice Applies a matured role change; callable only by this oracle's timelock.
+    /// @param role Role to change.
+    /// @param account Affected account.
+    /// @param grant True to grant, false to revoke.
+    function applyRoleChange(bytes32 role, address account, bool grant) external;
     /// @notice Reads an adopter's manager state and registered assertion count.
     /// @dev The unnamed argument is the adopter address.
     /// @return manager Current manager.
@@ -272,6 +281,9 @@ interface IStateOracleV3 {
         external
         view
         returns (address manager, address pendingManager, uint16 assertionCount);
+    /// @notice Matures a nomination or executes renunciation, only through the oracle's timelock.
+    /// @param recipient Nominated owner, or zero to renounce.
+    function authorizeOwnership(address recipient) external;
     /// @notice Executes encoded calls atomically in this oracle's context.
     /// @param calls Encoded function calls; one revert rolls back the entire batch.
     function batch(bytes[] memory calls) external;
@@ -311,22 +323,22 @@ interface IStateOracleV3 {
     /// @param role Managed role.
     /// @return Administrator role identifier.
     function getRoleAdmin(bytes32 role) external view returns (bytes32);
-    /// @notice Grants governance membership under owner authorization.
+    /// @notice Queues governance membership after the administration delay under owner authorization.
     /// @param governance Account to grant.
     function grantGovernanceRole(address governance) external;
-    /// @notice Grants guardian-admin membership under owner authorization.
+    /// @notice Queues guardian-admin membership after the administration delay under owner authorization.
     /// @param guardianAdmin Account to grant.
     function grantGuardianAdminRole(address guardianAdmin) external;
-    /// @notice Grants guardian membership under guardian-admin authorization.
+    /// @notice Queues guardian membership after the administration delay under guardian-admin authorization.
     /// @param guardian Account to grant.
     function grantGuardianRole(address guardian) external;
-    /// @notice Grants operator-admin membership under owner authorization.
+    /// @notice Queues operator-admin membership after the administration delay under owner authorization.
     /// @param operatorAdmin Account to grant.
     function grantOperatorAdminRole(address operatorAdmin) external;
-    /// @notice Grants operator membership under operator-admin authorization.
+    /// @notice Queues operator membership after the administration delay under operator-admin authorization.
     /// @param operator Account to grant.
     function grantOperatorRole(address operator) external;
-    /// @notice Grants a non-default-admin role under its administrator's authorization.
+    /// @notice Queues a non-default-admin role grant after the delay under its administrator's authorization.
     /// @param role Role to grant.
     /// @param account Account to grant.
     function grantRole(bytes32 role, address account) external;
@@ -415,9 +427,9 @@ interface IStateOracleV3 {
     /// @notice Removes a caller under operator authorization.
     /// @param account Account to remove.
     function removeFromWhitelist(address account) external;
-    /// @notice Relinquishes ownership and its coupled default-admin role.
+    /// @notice Queues renunciation of ownership and its coupled default-admin role after the current delay.
     function renounceOwnership() external;
-    /// @notice Relinquishes a role, except the owner's coupled default-admin role.
+    /// @notice Queues role renunciation, except the owner's coupled default-admin role.
     /// @param role Role to renounce.
     /// @param callerConfirmation Must equal the caller.
     function renounceRole(bytes32 role, address callerConfirmation) external;
@@ -425,25 +437,25 @@ interface IStateOracleV3 {
     /// @param adopter Adopter address.
     /// @param storageKey Key to reset.
     function resetStorage(address adopter, bytes32 storageKey) external;
-    /// @notice Revokes governance membership under owner authorization.
+    /// @notice Queues governance revocation after the administration delay under owner authorization.
     /// @param governance Account to revoke.
     function revokeGovernanceRole(address governance) external;
-    /// @notice Revokes guardian-admin membership under owner authorization.
+    /// @notice Queues guardian-admin revocation after the administration delay under owner authorization.
     /// @param guardianAdmin Account to revoke.
     function revokeGuardianAdminRole(address guardianAdmin) external;
-    /// @notice Revokes guardian membership under guardian-admin authorization.
+    /// @notice Queues guardian revocation after the administration delay under guardian-admin authorization.
     /// @param guardian Account to revoke.
     function revokeGuardianRole(address guardian) external;
     /// @notice Immediately clears a manager and any pending manager transfer under guardian authorization.
     /// @param contractAddress Adopter address.
     function revokeManager(address contractAddress) external;
-    /// @notice Revokes operator-admin membership under owner authorization.
+    /// @notice Queues operator-admin revocation after the administration delay under owner authorization.
     /// @param operatorAdmin Account to revoke.
     function revokeOperatorAdminRole(address operatorAdmin) external;
-    /// @notice Revokes operator membership under operator-admin authorization.
+    /// @notice Queues operator revocation after the administration delay under operator-admin authorization.
     /// @param operator Account to revoke.
     function revokeOperatorRole(address operator) external;
-    /// @notice Revokes a non-default-admin role under its administrator's authorization.
+    /// @notice Queues role revocation after the delay without revoking the owner's coupled default-admin role.
     /// @param role Role to revoke.
     /// @param account Account to revoke.
     function revokeRole(bytes32 role, address account) external;
@@ -465,7 +477,7 @@ interface IStateOracleV3 {
     /// @param contractAddress Adopter address.
     /// @param newManager Nominated successor.
     function transferManager(address contractAddress, address newManager) external;
-    /// @notice Nominates a successor owner.
+    /// @notice Nominates a successor who can accept only after the exact delayed authorization executes.
     /// @param newOwner Nominated successor.
     function transferOwnership(address newOwner) external;
     /// @notice Reads raw caller-whitelist membership.

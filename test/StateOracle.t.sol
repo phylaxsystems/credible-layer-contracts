@@ -1449,10 +1449,12 @@ contract StorageIntegrity is StateOracleBase {
     }
 }
 
+/// @notice Fixture with caller admission enabled and an effective operator grant.
 contract WhitelistBase is StateOracleBase {
     address constant USER1 = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.USER1")))));
     address constant USER2 = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.USER2")))));
 
+    /// @notice Enables admission and executes the operator grant used by whitelist tests.
     function setUp() public virtual override {
         super.setUp();
         // Re-enable whitelist for whitelist tests
@@ -1461,6 +1463,7 @@ contract WhitelistBase is StateOracleBase {
         // Grant OPERATOR_ROLE to STATE_ORACLE_ADMIN for existing whitelist tests
         stateOracle.grantRole(stateOracle.OPERATOR_ROLE(), STATE_ORACLE_ADMIN);
         vm.stopPrank();
+        executeLast(stateOracle);
     }
 }
 
@@ -1823,15 +1826,18 @@ contract RemoveAssertionWithWhitelist is WhitelistBase {
     }
 }
 
+/// @notice Fixture with a separate authorized operator.
 contract OperatorRoleBase is WhitelistBase {
     address constant OPERATOR = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.OPERATOR")))));
 
+    /// @notice Executes the test operator's role grant.
     function setUp() public virtual override {
         super.setUp();
         // Grant OPERATOR_ROLE to OPERATOR address
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.grantRole(stateOracle.OPERATOR_ROLE(), OPERATOR);
         vm.stopPrank();
+        executeLast(stateOracle);
     }
 }
 
@@ -2034,29 +2040,36 @@ contract OwnerOnlyFunctionsRemainProtected is OperatorRoleBase {
     }
 }
 
+/// @notice Fixture with a separate authorized guardian.
 contract GuardianRoleBase is OperatorRoleBase {
     address constant GUARDIAN = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.GUARDIAN")))));
 
+    /// @notice Executes the test guardian's role grant.
     function setUp() public virtual override {
         super.setUp();
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.grantGuardianRole(GUARDIAN);
         vm.stopPrank();
+        executeLast(stateOracle);
     }
 }
 
+/// @notice Tests guardian-admin control of delayed guardian role changes.
 contract GuardianAdminCanManageGuardians is OperatorRoleBase {
     address constant GUARDIAN_ADMIN_USER =
         address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.GUARDIAN_ADMIN_USER")))));
     address constant NEW_GUARDIAN =
         address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.NEW_GUARDIAN")))));
 
+    /// @notice Executes the test guardian-admin grant.
     function setUp() public virtual override {
         super.setUp();
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.grantGuardianAdminRole(GUARDIAN_ADMIN_USER);
+        executeLast(stateOracle);
     }
 
+    /// @notice Guardian admins can execute delayed guardian grants.
     function test_guardianAdminCanGrantGuardianRole() public {
         assertFalse(
             stateOracle.hasRole(stateOracle.GUARDIAN_ROLE(), NEW_GUARDIAN),
@@ -2065,19 +2078,23 @@ contract GuardianAdminCanManageGuardians is OperatorRoleBase {
 
         vm.prank(GUARDIAN_ADMIN_USER);
         stateOracle.grantGuardianRole(NEW_GUARDIAN);
+        executeLast(stateOracle);
 
         assertTrue(
             stateOracle.hasRole(stateOracle.GUARDIAN_ROLE(), NEW_GUARDIAN), "New guardian should have role after grant"
         );
     }
 
+    /// @notice Guardian admins can execute delayed guardian revocations.
     function test_guardianAdminCanRevokeGuardianRole() public {
         vm.prank(GUARDIAN_ADMIN_USER);
         stateOracle.grantGuardianRole(NEW_GUARDIAN);
+        executeLast(stateOracle);
         assertTrue(stateOracle.hasRole(stateOracle.GUARDIAN_ROLE(), NEW_GUARDIAN), "New guardian should have role");
 
         vm.prank(GUARDIAN_ADMIN_USER);
         stateOracle.revokeGuardianRole(NEW_GUARDIAN);
+        executeLast(stateOracle);
 
         assertFalse(
             stateOracle.hasRole(stateOracle.GUARDIAN_ROLE(), NEW_GUARDIAN),
@@ -2105,6 +2122,8 @@ contract GuardianAdminCanManageGuardians is OperatorRoleBase {
         stateOracle.grantGuardianRole(NEW_GUARDIAN);
     }
 
+    /// @notice Unauthorized callers cannot queue revocation of an effective guardian role.
+    /// @param unauthorizedCaller Candidate unauthorized caller.
     function testFuzz_RevertIf_nonGuardianAdminRevokesGuardianRole(address unauthorizedCaller)
         public
         noAdmin(unauthorizedCaller)
@@ -2115,6 +2134,7 @@ contract GuardianAdminCanManageGuardians is OperatorRoleBase {
 
         vm.prank(GUARDIAN_ADMIN_USER);
         stateOracle.grantGuardianRole(NEW_GUARDIAN);
+        executeLast(stateOracle);
 
         bytes32 guardianAdminRole = stateOracle.GUARDIAN_ADMIN_ROLE();
         vm.prank(unauthorizedCaller);
@@ -2302,18 +2322,22 @@ contract GuardianEmergencyActions is GuardianRoleBase {
     }
 }
 
+/// @notice Tests operator-admin role management and permission boundaries.
 contract OperatorAdminCanManageOperators is OperatorRoleBase {
     address constant OPERATOR_ADMIN_USER =
         address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.OPERATOR_ADMIN_USER")))));
     address constant NEW_OPERATOR =
         address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.NEW_OPERATOR")))));
 
+    /// @notice Executes the test operator-admin grant.
     function setUp() public virtual override {
         super.setUp();
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.grantOperatorAdminRole(OPERATOR_ADMIN_USER);
+        executeLast(stateOracle);
     }
 
+    /// @notice Operator admins can execute delayed operator grants.
     function test_operatorAdminCanGrantOperatorRole() public {
         assertFalse(
             stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), NEW_OPERATOR),
@@ -2322,19 +2346,23 @@ contract OperatorAdminCanManageOperators is OperatorRoleBase {
 
         vm.prank(OPERATOR_ADMIN_USER);
         stateOracle.grantOperatorRole(NEW_OPERATOR);
+        executeLast(stateOracle);
 
         assertTrue(
             stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), NEW_OPERATOR), "New operator should have role after grant"
         );
     }
 
+    /// @notice Operator admins can execute delayed operator revocations.
     function test_operatorAdminCanRevokeOperatorRole() public {
         vm.prank(OPERATOR_ADMIN_USER);
         stateOracle.grantOperatorRole(NEW_OPERATOR);
+        executeLast(stateOracle);
         assertTrue(stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), NEW_OPERATOR), "New operator should have role");
 
         vm.prank(OPERATOR_ADMIN_USER);
         stateOracle.revokeOperatorRole(NEW_OPERATOR);
+        executeLast(stateOracle);
 
         assertFalse(
             stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), NEW_OPERATOR),
@@ -2363,6 +2391,8 @@ contract OperatorAdminCanManageOperators is OperatorRoleBase {
         stateOracle.grantOperatorRole(NEW_OPERATOR);
     }
 
+    /// @notice Unauthorized callers cannot queue revocation of an effective operator role.
+    /// @param unauthorizedCaller Candidate unauthorized caller.
     function testFuzz_RevertIf_nonOperatorAdminRevokesOperatorRole(address unauthorizedCaller)
         public
         noAdmin(unauthorizedCaller)
@@ -2375,6 +2405,7 @@ contract OperatorAdminCanManageOperators is OperatorRoleBase {
 
         vm.prank(OPERATOR_ADMIN_USER);
         stateOracle.grantOperatorRole(NEW_OPERATOR);
+        executeLast(stateOracle);
 
         vm.expectRevert(
             abi.encodeWithSelector(

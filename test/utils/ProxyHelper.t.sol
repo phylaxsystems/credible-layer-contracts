@@ -5,9 +5,11 @@ import {Test} from "forge-std/Test.sol";
 import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
+import {StateOracle} from "../../src/StateOracle.sol";
 
 import {Adopter} from "./Adopter.sol";
 
+/// @notice Shared proxy deployment and delayed-operation helpers for tests.
 contract ProxyHelper is Test {
     address constant ADMIN = address(uint160(uint256(keccak256(abi.encode("pcl.test.PHYLAX_WINS")))));
 
@@ -18,6 +20,15 @@ contract ProxyHelper is Test {
     function getProxyAdmin(address proxy) internal view returns (address admin) {
         // Read admin slot from proxy storage
         admin = address(uint160(uint256(vm.load(proxy, ERC1967Utils.ADMIN_SLOT))));
+    }
+
+    /// @notice Advances to the last queued action's readiness and executes it.
+    /// @param oracle Oracle holding the action.
+    function executeLast(StateOracle oracle) internal {
+        bytes32 id = oracle.latestAdministrationOperation();
+        uint256 readyAt = oracle.administrationOperation(id).readyAt;
+        if (block.timestamp < readyAt) vm.warp(readyAt);
+        oracle.executeAdministration(id);
     }
 
     function test_isAdmin() public {
