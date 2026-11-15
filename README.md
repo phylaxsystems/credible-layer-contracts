@@ -77,6 +77,22 @@ These controls are intended strictly for emergency response scenarios—such as 
 
 The deployment scripts (`script/DeployCore.s.sol`, `script/DeployCoreWithCreateX.s.sol`, and `script/DeployCoreWithStaging.s.sol`) provision the core protocol with both `DAVerifierECDSA` and `DAVerifierOnChain` implementations. Both DA verifiers are deployed and registered in the DA verifier registry during initialization, allowing managers to select either mechanism when adding assertions.
 
+Fresh proxies call `initializeWithWhitelist(admin, adminVerifiers, daVerifiers, maxAssertions, whitelistEnabled, initialWhitelist)`
+in their constructor, or the original four-argument `initialize` for an enabled, empty caller whitelist.
+Both entrypoints use one setup path to initialize application state at version 2 and deploy the oracle's three-day administration
+timelock. Existing version-1 proxies instead call `initializeTimelockV2()` through their existing ProxyAdmin's
+`upgradeAndCall`; this preserves application state and rejects callers other than the upgrade admin and replay.
+Both paths share the same timelock setup. No address prediction or legacy bootstrap deployment is needed.
+
+The oracle deploys its controller with plain `new StateOracleTimelock(address(this))` and stores the address
+in the ERC-7201 namespace `phylax.storage.StateOracleAdministration`. `timelock()` reads that reference;
+future implementations must preserve the namespace. Existing sequential storage is unchanged.
+Each oracle is its own controller's only proposer/executor. The 75/25-block assertion
+lifecycle configuration remains independent of the timestamp-based administration delay.
+
+Both original initializer signatures are preserved. Already initialized proxies cannot run either fresh
+initializer; historical V1/V2 consumer interfaces are unchanged. The ABI check has no initializer exceptions.
+
 ### Environment Variables
 
 Set the following environment variables before running the deployment scripts:

@@ -23,6 +23,7 @@ address constant ASSERTION_CONTRACT_ADDRESS = 0x63F9abBE8aA6Ba1261Ef3B0CBfb25A5F
 // Precompile address
 address constant PRECOMPILE_ADDRESS = 0x4461812e00718ff8D80929E3bF595AEaaa7b881E;
 
+/// @notice Deploys verifier infrastructure and a fully initialized oracle with its own admin timelock.
 contract DeployCore is Script {
     address admin;
     uint256 assertionTimelockBlocks;
@@ -161,6 +162,12 @@ contract DeployCore is Script {
         return stateOracle;
     }
 
+    /// @notice Deploys a fresh proxy and initializes its application state and administration timelock atomically.
+    /// @param stateOracle Implementation to install.
+    /// @param adminVerifierDeployments Initial admin verifiers.
+    /// @param daVerifierAddresses Initial DA verifiers.
+    /// @param maxAssertions Initial per-adopter assertion cap.
+    /// @return Deployed initialized proxy address.
     function _deployStateOracleProxy(
         address stateOracle,
         address[] memory adminVerifierDeployments,

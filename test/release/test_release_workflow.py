@@ -17,7 +17,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
         generation_index = artifact_job.index("run: ./shell/create_artifacts.sh")
         verification_index = artifact_job.index(
-            "run: git diff --exit-code -- bindings/rust/abi/IStateOracleV1.json bindings/rust/abi/IStateOracleV2.json"
+            "run: git diff --exit-code -- bindings/rust/abi/"
         )
         upload_index = artifact_job.index("uses: actions/upload-artifact@")
 
@@ -190,6 +190,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn('bindings/rust/abi', script)
         self.assertIn('cp "${INTERFACES}/IStateOracleV1.json"', script)
         self.assertIn('cp "${INTERFACES}/IStateOracleV2.json"', script)
+        self.assertIn('cp "${INTERFACES}/IStateOracleV3.json"', script)
 
     def test_state_oracle_release_mapping_preserves_supported_abis(self):
         readme = (ROOT / "bindings" / "rust" / "README.md").read_text()
@@ -203,6 +204,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         )
         self.assertIn("pub mod v1", rust_source)
         self.assertIn("pub mod v2", rust_source)
+        self.assertIn("pub mod v3", rust_source)
 
     def test_gas_snapshot_uses_a_pinned_foundry_version(self):
         workflow = (ROOT / ".github" / "workflows" / "solidity-test.yml").read_text()

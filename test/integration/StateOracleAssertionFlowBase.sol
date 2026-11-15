@@ -55,6 +55,7 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
         virtual
         returns (bytes32 assertionId, bytes memory metadata, bytes memory proof);
 
+    /// @notice Deploys a fresh oracle with this fixture's verifiers and registers a managed adopter.
     function setUp() public virtual {
         adminVerifier = _deployAdminVerifier();
         daVerifier = _deployDAVerifier();
@@ -66,7 +67,13 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
         daVerifiers[0] = daVerifier;
 
         bytes memory data = abi.encodeWithSelector(
-            StateOracle.initialize.selector, STATE_ORACLE_ADMIN, adminVerifiers, daVerifiers, MAX_ASSERTIONS_PER_AA
+            StateOracle.initializeWithWhitelist.selector,
+            STATE_ORACLE_ADMIN,
+            adminVerifiers,
+            daVerifiers,
+            MAX_ASSERTIONS_PER_AA,
+            true,
+            new address[](0)
         );
         stateOracle = StateOracle(deployProxy(address(implementation), data));
 

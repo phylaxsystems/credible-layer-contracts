@@ -28,6 +28,7 @@ contract StateOracleAccessControlBase is Test, ProxyHelper {
         _;
     }
 
+    /// @notice Deploys and initializes the oracle used by role and ownership tests.
     function setUp() public virtual {
         DAVerifierMock daVerifier = new DAVerifierMock();
         StateOracle implementation = new StateOracle(TIMEOUT);
@@ -38,7 +39,13 @@ contract StateOracleAccessControlBase is Test, ProxyHelper {
         daVerifiers[0] = IDAVerifier(address(daVerifier));
 
         bytes memory data = abi.encodeWithSelector(
-            StateOracle.initialize.selector, STATE_ORACLE_ADMIN, verifiers, daVerifiers, MAX_ASSERTIONS_PER_AA
+            StateOracle.initializeWithWhitelist.selector,
+            STATE_ORACLE_ADMIN,
+            verifiers,
+            daVerifiers,
+            MAX_ASSERTIONS_PER_AA,
+            true,
+            new address[](0)
         );
         stateOracle = StateOracle(deployProxy(address(implementation), data));
 

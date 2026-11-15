@@ -23,6 +23,7 @@ remain available so consumers can select the interface used by their deployment.
 | `0.2.0` | `IStateOracleV1` | `state_oracle::v1` |
 | `0.3.0` | `IStateOracleV2` | `state_oracle::v2` |
 | `0.4.0` | `IStateOracleV2` | `state_oracle::v2` |
+| Unreleased delayed administration | `IStateOracleV3` | `state_oracle::v3` |
 
 The table maps contract releases to compatible interfaces. The Rust crate is
 available from release `0.4.0`; earlier Git release tags do not contain
