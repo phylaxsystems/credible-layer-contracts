@@ -907,6 +907,25 @@
   },
   {
     "type": "function",
+    "name": "registrationAvailableAt",
+    "inputs": [
+      {
+        "name": "contractAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "removeAdminVerifier",
     "inputs": [
       {
@@ -1469,6 +1488,25 @@
   },
   {
     "type": "event",
+    "name": "ManagerRevoked",
+    "inputs": [
+      {
+        "name": "contractAddress",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "registrationAvailableAt",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "ManagerTransferRequested",
     "inputs": [
       {
@@ -1861,6 +1899,17 @@
     "type": "error",
     "name": "InvalidManagerTransferRequest",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ManagerRecoveryPending",
+    "inputs": [
+      {
+        "name": "registrationAvailableAt",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",

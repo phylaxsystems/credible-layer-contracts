@@ -6,6 +6,7 @@ import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transp
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {Initializable} from "solady/utils/Initializable.sol";
 import {StateOracle} from "../src/StateOracle.sol";
+import {StateOracleTimelock} from "../src/StateOracleTimelock.sol";
 import {StateOracleAccessControl} from "../src/StateOracleAccessControl.sol";
 import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
 import {IDAVerifier} from "../src/interfaces/IDAVerifier.sol";
@@ -38,6 +39,9 @@ contract StateOracleUpgradeTest is ProxyHelper {
     IAdminVerifier adminVerifier;
     IDAVerifier daVerifier;
     StateOracle stateOracle;
+    address originalProxy;
+    address originalProxyAdmin;
+    bytes32 originalProxyCodeHash;
 
     /// @notice Seeds a legacy proxy and migrates it atomically through its existing ProxyAdmin.
     function setUp() public {
@@ -61,6 +65,9 @@ contract StateOracleUpgradeTest is ProxyHelper {
             (oracleOwner, adminVerifier, daVerifier, MAX_ASSERTIONS, manager)
         );
         StateOracleWindowLayoutBaseline proxy = StateOracleWindowLayoutBaseline(deployProxy(address(baseline), data));
+        originalProxy = address(proxy);
+        originalProxyAdmin = getProxyAdmin(originalProxy);
+        originalProxyCodeHash = originalProxy.codehash;
 
         vm.startPrank(oracleOwner);
         proxy.seedAdopter(adopter, manager, nextManager, 1);
@@ -92,7 +99,13 @@ contract StateOracleUpgradeTest is ProxyHelper {
         );
     }
 
-    function test_upgradePreservesPopulatedWindowState() public view {
+    /// @notice Migration preserves proxy identity and all populated application state.
+    function test_upgradePreservesPopulatedWindowState() public {
+        assertEq(address(stateOracle), originalProxy);
+        assertEq(address(stateOracle).codehash, originalProxyCodeHash);
+        assertEq(getProxyAdmin(address(stateOracle)), originalProxyAdmin);
+        assertEq(ProxyAdmin(originalProxyAdmin).owner(), ADMIN);
+        assertEq(stateOracle.registrationAvailableAt(adopter), 0);
         assertEq(stateOracle.owner(), oracleOwner);
         assertEq(stateOracle.pendingOwner(), nextOwner);
         assertTrue(stateOracle.hasRole(stateOracle.DEFAULT_ADMIN_ROLE(), oracleOwner));
@@ -124,6 +137,36 @@ contract StateOracleUpgradeTest is ProxyHelper {
         assertTrue(stateOracle.hasAssertion(adopter, REMOVED_ASSERTION));
         _assertWindow(OPEN_ASSERTION, OPEN_ACTIVATION, 0);
         _assertWindow(REMOVED_ASSERTION, REMOVED_ACTIVATION, OLD_DEACTIVATION);
+    }
+
+    /// @notice Recovery records its deadline outside the oracle and only clears existing manager fields.
+    function test_recoveryWritesOnlyExistingManagerSlots() public {
+        StateOracleTimelock controller = stateOracle.timelock();
+        vm.prank(guardian);
+        vm.expectPartialRevert(bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")));
+        controller.startManagerRecovery(adopter);
+        assertEq(stateOracle.registrationAvailableAt(adopter), 0);
+        uint256 deadline = block.timestamp + 3 days;
+        vm.record();
+        vm.prank(guardian);
+        stateOracle.revokeManager(adopter);
+        (, bytes32[] memory writes) = vm.accesses(address(stateOracle));
+        bytes32 managerSlot = keccak256(abi.encode(adopter, uint256(3)));
+        assertEq(writes.length, 2);
+        assertEq(writes[0], managerSlot);
+        assertEq(writes[1], bytes32(uint256(managerSlot) + 1));
+        assertEq(controller.registrationAvailableAt(address(stateOracle), adopter), deadline);
+        assertEq(controller.registrationAvailableAt(makeAddr("other oracle"), adopter), 0);
+        assertEq(stateOracle.registrationAvailableAt(adopter), deadline);
+        assertEq(stateOracle.getManager(adopter), address(0));
+        assertEq(stateOracle.getPendingManager(adopter), address(0));
+        _assertWindow(OPEN_ASSERTION, OPEN_ACTIVATION, 0);
+        _assertWindow(REMOVED_ASSERTION, REMOVED_ACTIVATION, OLD_DEACTIVATION);
+        vm.warp(deadline);
+        vm.prank(manager);
+        stateOracle.registerAssertionAdopter(adopter, adminVerifier, "");
+        assertEq(stateOracle.getManager(adopter), manager);
+        assertEq(stateOracle.owner(), oracleOwner);
     }
 
     /// @notice Both fresh initializers reject an already initialized upgraded proxy.

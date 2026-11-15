@@ -74,6 +74,9 @@ interface IStateOracleV3 {
     error InvalidInitialization();
     /// @notice A manager transfer request is invalid.
     error InvalidManagerTransferRequest();
+    /// @notice Registration was attempted before the guardian recovery deadline.
+    /// @param registrationAvailableAt Earliest registration timestamp.
+    error ManagerRecoveryPending(uint256 registrationAvailableAt);
     /// @notice No manager transfer is pending.
     error NoPendingManager();
     /// @notice An initialization-only operation ran outside initialization.
@@ -158,6 +161,10 @@ interface IStateOracleV3 {
     /// @notice An initialization version was consumed.
     /// @param version Consumed version number.
     event Initialized(uint64 version);
+    /// @notice A guardian immediately revoked management and started recovery.
+    /// @param contractAddress Adopter whose manager was revoked.
+    /// @param registrationAvailableAt Earliest registration timestamp.
+    event ManagerRevoked(address indexed contractAddress, uint256 registrationAvailableAt);
     /// @notice A manager nominated its successor.
     /// @param contractAddress Adopter address.
     /// @param manager Current manager.
@@ -432,6 +439,10 @@ interface IStateOracleV3 {
     /// @param adminVerifier Registered admin verifier.
     /// @param data Verifier-specific evidence.
     function registerAssertionAdopter(address contractAddress, address adminVerifier, bytes memory data) external;
+    /// @notice Returns the earliest registration time after guardian revocation.
+    /// @param contractAddress Adopter address.
+    /// @return Deadline timestamp, or zero without recorded revocation.
+    function registrationAvailableAt(address contractAddress) external view returns (uint256);
     /// @notice Queues an admin verifier removal after the administration delay under governance authorization.
     /// @param adminVerifier Verifier to remove.
     function removeAdminVerifier(address adminVerifier) external;

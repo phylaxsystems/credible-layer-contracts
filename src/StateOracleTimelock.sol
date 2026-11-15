@@ -44,6 +44,8 @@ contract StateOracleTimelock is TimelockController {
 
     /// @notice Queue indexed by the proposing oracle.
     mapping(address => OracleAdministration) private administration;
+    /// @notice Fixed registration deadlines indexed by oracle and adopter; zero before revocation.
+    mapping(address oracle => mapping(address adopter => uint256 deadline)) public registrationAvailableAt;
 
     /// @notice The oracle address is zero.
     error InvalidOracle();
@@ -97,6 +99,14 @@ contract StateOracleTimelock is TimelockController {
     /// @return Latest identifier; check its operation state to determine whether it remains pending.
     function pendingAdministrationOperation(address oracle, bytes32 resource) external view returns (bytes32) {
         return administration[oracle].pending[resource];
+    }
+
+    /// @notice Snapshots recovery using the current delay for this controller's oracle.
+    /// @param adopter Adopter whose management is being revoked.
+    /// @return deadline Earliest re-registration timestamp, unaffected by subsequent delay changes.
+    function startManagerRecovery(address adopter) external onlyRole(PROPOSER_ROLE) returns (uint256 deadline) {
+        deadline = block.timestamp + getMinDelay();
+        registrationAvailableAt[msg.sender][adopter] = deadline;
     }
 
     /// @notice Records a proposal in the calling oracle's domain without writing oracle storage.

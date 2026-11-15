@@ -81,8 +81,13 @@ abstract contract StateOracleAccessControl is Ownable2Step, AccessControl, State
 
     /// @notice Modifier to restrict access to governance role
     modifier onlyGovernance() {
-        _checkRole(GOVERNANCE_ROLE);
+        _checkGovernance();
         _;
+    }
+
+    /// @notice Shares governance authentication across administrative scheduling entrypoints.
+    function _checkGovernance() internal view {
+        _checkRole(GOVERNANCE_ROLE);
     }
 
     /// @notice Modifier to restrict access to guardian role

@@ -12,6 +12,7 @@ import {Initializable} from "solady/utils/Initializable.sol";
 import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
 import {IDAVerifier} from "../src/interfaces/IDAVerifier.sol";
 import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.sol";
+import {AdminVerifierAlwaysApprove} from "../src/verification/admin/AdminVerifierAlwaysApprove.sol";
 import {AdminVerifierRegistry} from "../src/lib/AdminVerifierRegistry.sol";
 import {DAVerifierRegistry} from "../src/lib/DAVerifierRegistry.sol";
 
@@ -974,7 +975,10 @@ contract AcceptManagerTransfer is TransferManagementBase {
     }
 }
 
+/// @notice Tests immediate guardian revocation and delayed manager recovery.
 contract RevokeManager is TransferManagementBase {
+    /// @notice Revocation clears both current and pending managers and records D's recovery deadline.
+    /// @param newManager Pending successor to invalidate.
     function testFuzz_revokeManager(address newManager) public noAdmin(newManager) {
         vm.assume(newManager != address(0));
         (address adopter, address manager) = registerAssertionAdopter();
@@ -983,6 +987,158 @@ contract RevokeManager is TransferManagementBase {
         stateOracle.revokeManager(adopter);
         assertEq(stateOracle.getManager(adopter), address(0), "Manager should have been revoked");
         assertEq(stateOracle.getPendingManager(adopter), address(0), "Pending manager should have been reset");
+        assertEq(stateOracle.registrationAvailableAt(adopter), block.timestamp + 3 days);
+    }
+
+    /// @notice Recovery rejects D minus one, accepts D, and does not revive a pending handover.
+    function test_recoveryBoundaryPreservesPreexistingApprovalAndInvalidatesTransfer() public {
+        (address adopter, address manager) = registerAssertionAdopter();
+        assertEq(stateOracle.registrationAvailableAt(adopter), 0);
+        vm.prank(manager);
+        stateOracle.transferManager(adopter, address(0xB0B));
+        uint256 deadline = block.timestamp + 3 days;
+        vm.expectEmit(true, true, true, true);
+        emit StateOracle.ManagerRevoked(adopter, deadline);
+        vm.prank(STATE_ORACLE_ADMIN);
+        stateOracle.revokeManager(adopter);
+        assertEq(stateOracle.getManager(adopter), address(0));
+        vm.prank(address(0xB0B));
+        vm.expectRevert(StateOracle.NoPendingManager.selector);
+        stateOracle.acceptManagerTransfer(adopter);
+        vm.warp(deadline - 1);
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(StateOracle.ManagerRecoveryPending.selector, deadline));
+        stateOracle.registerAssertionAdopter(adopter, adminVerifier, "");
+        vm.warp(deadline);
+        assertEq(stateOracle.getManager(adopter), address(0), "Expiry does not install a manager");
+        vm.prank(manager);
+        stateOracle.registerAssertionAdopter(adopter, adminVerifier, "");
+        assertEq(stateOracle.getManager(adopter), manager, "Existing approval requires no second wait");
+        vm.prank(manager);
+        vm.expectRevert(StateOracle.AssertionAdopterAlreadyRegistered.selector);
+        stateOracle.registerAssertionAdopter(adopter, adminVerifier, "");
+    }
+
+    /// @notice Verifier admission and recovery can mature together, but batching cannot shorten either delay.
+    function test_newVerifierCanMatureAlongsideRecoveryButCannotBypassItInBatch() public {
+        (address adopter,) = registerAssertionAdopter();
+        IAdminVerifier alternate = new AdminVerifierAlwaysApprove();
+        vm.startPrank(STATE_ORACLE_ADMIN);
+        stateOracle.addAdminVerifier(alternate);
+        stateOracle.revokeManager(adopter);
+        vm.stopPrank();
+        uint256 deadline = stateOracle.registrationAvailableAt(adopter);
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = abi.encodeCall(stateOracle.registerAssertionAdopter, (adopter, alternate, ""));
+        vm.warp(deadline - 1);
+        vm.prank(address(0xB0B));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                BatchExecutor.BatchError.selector,
+                abi.encodeWithSelector(StateOracle.ManagerRecoveryPending.selector, deadline)
+            )
+        );
+        stateOracle.batch(calls);
+        executeLast(stateOracle);
+        vm.prank(address(0xB0B));
+        stateOracle.batch(calls);
+        assertEq(stateOracle.getManager(adopter), address(0xB0B));
+    }
+
+    /// @notice Revocation and recovery preserve assertion windows, counts and block-delayed storage resets.
+    function test_recoveryPreservesAssertionWindowsAndScheduledResets() public {
+        (address adopter, address manager) = registerAssertionAdopter();
+        bytes32 active = bytes32("active");
+        bytes32 removed = bytes32("removed");
+        addAssertionAndAssert(manager, adopter, active);
+        addAssertionAndAssert(manager, adopter, removed);
+        uint256 activation = block.number + TIMEOUT;
+        vm.roll(activation);
+        vm.expectEmit(true, true, true, true);
+        emit StateOracle.StorageReset(adopter, bytes32("key"), block.number + TIMEOUT);
+        vm.prank(manager);
+        stateOracle.resetStorage(adopter, bytes32("key"));
+        vm.startPrank(STATE_ORACLE_ADMIN);
+        stateOracle.removeAssertionByGuardian(adopter, removed);
+        stateOracle.revokeManager(adopter);
+        vm.stopPrank();
+        uint256 removal = block.number + TIMEOUT;
+        vm.warp(stateOracle.registrationAvailableAt(adopter));
+        vm.prank(manager);
+        stateOracle.registerAssertionAdopter(adopter, adminVerifier, "");
+        (uint256 activeStart, uint256 activeEnd) = stateOracle.getAssertionWindow(adopter, active);
+        (uint256 removedStart, uint256 removedEnd) = stateOracle.getAssertionWindow(adopter, removed);
+        assertEq(activeStart, activation);
+        assertEq(activeEnd, 0);
+        assertEq(removedStart, activation);
+        assertEq(removedEnd, removal);
+        assertEq(stateOracle.getAssertionCount(adopter), 1);
+        vm.prank(manager);
+        vm.expectRevert(StateOracle.AssertionAlreadyExists.selector);
+        stateOracle.addAssertion(adopter, removed, daVerifierMock, "", "");
+        vm.roll(removal);
+        addAssertionAndAssert(manager, adopter, removed);
+    }
+
+    /// @notice An active recovery retains its snapshotted deadline after D decreases.
+    function test_delayDecreaseDoesNotShortenActiveRecovery() public {
+        (address adopter, address manager) = registerAssertionAdopter();
+        vm.prank(STATE_ORACLE_ADMIN);
+        stateOracle.scheduleDelayUpdate(5 days);
+        executeLast(stateOracle);
+        vm.prank(STATE_ORACLE_ADMIN);
+        stateOracle.scheduleDelayUpdate(3 days);
+        uint256 decreaseReady = block.timestamp + 5 days;
+        vm.warp(block.timestamp + 4 days);
+        vm.prank(STATE_ORACLE_ADMIN);
+        stateOracle.revokeManager(adopter);
+        uint256 deadline = block.timestamp + 5 days;
+        assertEq(stateOracle.registrationAvailableAt(adopter), deadline);
+        executeLast(stateOracle);
+        assertEq(block.timestamp, decreaseReady);
+        assertEq(stateOracle.administrationDelay(), 3 days);
+        assertEq(stateOracle.registrationAvailableAt(adopter), deadline);
+        vm.warp(deadline - 1);
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(StateOracle.ManagerRecoveryPending.selector, deadline));
+        stateOracle.registerAssertionAdopter(adopter, adminVerifier, "");
+        vm.warp(deadline);
+        vm.prank(manager);
+        stateOracle.registerAssertionAdopter(adopter, adminVerifier, "");
+        vm.prank(STATE_ORACLE_ADMIN);
+        stateOracle.revokeManager(adopter);
+        assertEq(stateOracle.registrationAvailableAt(adopter), block.timestamp + 3 days);
+    }
+
+    /// @notice Recovery expiry does not waive admission, verifier registration or current admin approval.
+    function test_expiredRecoveryStillRequiresAdmissionRegisteredVerifierAndApproval() public {
+        (address adopter, address manager) = registerAssertionAdopter();
+        vm.startPrank(STATE_ORACLE_ADMIN);
+        stateOracle.revokeManager(adopter);
+        stateOracle.enableWhitelist();
+        bytes32 enable = stateOracle.latestAdministrationOperation();
+        stateOracle.removeAdminVerifier(adminVerifier);
+        vm.stopPrank();
+        executeLast(stateOracle);
+        stateOracle.executeAdministration(enable);
+        vm.prank(manager);
+        vm.expectRevert(StateOracle.NotWhitelisted.selector);
+        stateOracle.registerAssertionAdopter(adopter, adminVerifier, "");
+        vm.prank(STATE_ORACLE_ADMIN);
+        stateOracle.disableWhitelist();
+        executeLast(stateOracle);
+        vm.prank(manager);
+        vm.expectRevert(AdminVerifierRegistry.AdminVerifierNotRegistered.selector);
+        stateOracle.registerAssertionAdopter(adopter, adminVerifier, "");
+        vm.prank(STATE_ORACLE_ADMIN);
+        stateOracle.addAdminVerifier(adminVerifier);
+        executeLast(stateOracle);
+        vm.prank(address(0xB0B));
+        vm.expectRevert(StateOracle.UnauthorizedRegistrant.selector);
+        stateOracle.registerAssertionAdopter(adopter, adminVerifier, "");
+        vm.prank(manager);
+        stateOracle.registerAssertionAdopter(adopter, adminVerifier, "");
+        assertEq(stateOracle.getManager(adopter), manager);
     }
 
     function testFuzz_RevertIf_revokeManagerByUnauthorized(address unauthorizedManager)
