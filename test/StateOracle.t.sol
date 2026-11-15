@@ -323,6 +323,7 @@ contract AddAssertion is StateOracleBase {
     }
 }
 
+/// @notice Tests assertion re-addition against lifecycle, admission and verifier policy.
 contract ReaddAssertion is StateOracleBase {
     bytes32 constant ASSERTION_ID = bytes32(0);
     address adopter;
@@ -534,6 +535,7 @@ contract ReaddAssertion is StateOracleBase {
         _assertWindowAndCount(block.number + TIMEOUT, 0, 1);
     }
 
+    /// @notice Re-addition uses the effective DA registry after delayed removal or restoration.
     function test_readdRequiresRegisteredDAVerifier() public {
         (uint256 activationBlock, uint256 deactivationBlock) = _eligibleAssertion();
         vm.prank(manager);
@@ -543,6 +545,7 @@ contract ReaddAssertion is StateOracleBase {
 
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.removeDAVerifier(daVerifierMock);
+        executeLast(stateOracle);
         vm.prank(manager);
         vm.expectRevert(StateOracle.DAVerifierNotRegistered.selector);
         stateOracle.addAssertion(adopter, ASSERTION_ID, daVerifierMock, new bytes(0), new bytes(0));
@@ -550,6 +553,7 @@ contract ReaddAssertion is StateOracleBase {
 
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addDAVerifier(daVerifierMock);
+        executeLast(stateOracle);
         _add();
         _assertWindowAndCount(block.number + TIMEOUT, 0, 1);
     }
@@ -1002,12 +1006,16 @@ contract RevokeManager is TransferManagementBase {
     }
 }
 
+/// @notice Tests governance-authorized delayed admin verifier additions.
 contract AddAdminVerifier is StateOracleBase {
+    /// @notice A queued admin verifier becomes registered after execution.
+    /// @param _adminVerifier Verifier to add.
     function test_addAdminVerifier(IAdminVerifier _adminVerifier) public {
         vm.assume(_adminVerifier != adminVerifier);
         assertEq(stateOracle.adminVerifiers(_adminVerifier), false, "Admin verifier should not have been added");
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addAdminVerifier(_adminVerifier);
+        executeLast(stateOracle);
         assertEq(stateOracle.adminVerifiers(_adminVerifier), true, "Admin verifier should be added");
     }
 
@@ -1030,27 +1038,36 @@ contract AddAdminVerifier is StateOracleBase {
         stateOracle.addAdminVerifier(_adminVerifier);
     }
 
+    /// @notice An effective registry member cannot be added again.
+    /// @param _adminVerifier Verifier to add twice.
     function testFuzz_RevertIf_addAdminVerifierTwice(IAdminVerifier _adminVerifier) public {
         vm.assume(_adminVerifier != adminVerifier);
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addAdminVerifier(_adminVerifier);
+        executeLast(stateOracle);
         vm.expectRevert(AdminVerifierRegistry.AdminVerifierAlreadyRegistered.selector);
         stateOracle.addAdminVerifier(_adminVerifier);
         vm.stopPrank();
     }
 }
 
+/// @notice Tests governance-authorized delayed admin verifier removals.
 contract RemoveAdminVerifier is StateOracleBase {
+    /// @notice An admin verifier leaves the registry after delayed execution.
     function test_removeAdminVerifier() public {
         IAdminVerifier _adminVerifier = IAdminVerifier(new AdminVerifierOwner());
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addAdminVerifier(_adminVerifier);
+        executeLast(stateOracle);
         assertEq(stateOracle.adminVerifiers(_adminVerifier), true, "Admin verifier should have been added");
         stateOracle.removeAdminVerifier(_adminVerifier);
+        executeLast(stateOracle);
         vm.stopPrank();
         assertEq(stateOracle.adminVerifiers(_adminVerifier), false, "Admin verifier should have been removed");
     }
 
+    /// @notice Unauthorized callers cannot queue removal of an effective admin verifier.
+    /// @param unauthorizedAdmin Candidate unauthorized caller.
     function testFuzz_RevertIf_removeAdminVerifierByUnauthorized(address unauthorizedAdmin)
         public
         noAdmin(unauthorizedAdmin)
@@ -1061,6 +1078,7 @@ contract RemoveAdminVerifier is StateOracleBase {
         IAdminVerifier _adminVerifier = IAdminVerifier(new AdminVerifierOwner());
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addAdminVerifier(_adminVerifier);
+        executeLast(stateOracle);
         assertEq(stateOracle.adminVerifiers(_adminVerifier), true, "Admin verifier should have been added");
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -1081,13 +1099,17 @@ contract RemoveAdminVerifier is StateOracleBase {
     }
 }
 
+/// @notice Tests delayed DA verifier additions.
 contract AddDAVerifier is StateOracleBase {
+    /// @notice A DA verifier becomes effective after delayed execution.
+    /// @param _daVerifier Verifier to add.
     function test_addDAVerifier(IDAVerifier _daVerifier) public {
         vm.assume(address(_daVerifier) != address(0));
         vm.assume(_daVerifier != daVerifierMock);
         assertEq(stateOracle.daVerifiers(_daVerifier), false, "DA verifier should not have been added");
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addDAVerifier(_daVerifier);
+        executeLast(stateOracle);
         assertEq(stateOracle.daVerifiers(_daVerifier), true, "DA verifier should be added");
         assertTrue(stateOracle.isDAVerifierRegistered(_daVerifier), "isDAVerifierRegistered should return true");
     }
@@ -1111,29 +1133,38 @@ contract AddDAVerifier is StateOracleBase {
         stateOracle.addDAVerifier(_daVerifier);
     }
 
+    /// @notice An effective DA registry member cannot be added twice.
+    /// @param _daVerifier Verifier to add twice.
     function testFuzz_RevertIf_addDAVerifierTwice(IDAVerifier _daVerifier) public {
         vm.assume(_daVerifier != daVerifierMock);
         vm.assume(address(_daVerifier) != address(0));
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addDAVerifier(_daVerifier);
+        executeLast(stateOracle);
         vm.expectRevert(DAVerifierRegistry.DAVerifierAlreadyRegistered.selector);
         stateOracle.addDAVerifier(_daVerifier);
         vm.stopPrank();
     }
 }
 
+/// @notice Tests delayed DA verifier removals.
 contract RemoveDAVerifier is StateOracleBase {
+    /// @notice A DA verifier leaves the registry after delayed execution.
     function test_removeDAVerifier() public {
         IDAVerifier _daVerifier = IDAVerifier(address(0x1234));
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addDAVerifier(_daVerifier);
+        executeLast(stateOracle);
         assertEq(stateOracle.daVerifiers(_daVerifier), true, "DA verifier should have been added");
         stateOracle.removeDAVerifier(_daVerifier);
+        executeLast(stateOracle);
         vm.stopPrank();
         assertEq(stateOracle.daVerifiers(_daVerifier), false, "DA verifier should have been removed");
         assertFalse(stateOracle.isDAVerifierRegistered(_daVerifier), "isDAVerifierRegistered should return false");
     }
 
+    /// @notice Unauthorized callers cannot queue removal of an effective DA verifier.
+    /// @param unauthorizedAdmin Candidate unauthorized caller.
     function testFuzz_RevertIf_removeDAVerifierByUnauthorized(address unauthorizedAdmin)
         public
         noAdmin(unauthorizedAdmin)
@@ -1144,6 +1175,7 @@ contract RemoveDAVerifier is StateOracleBase {
         IDAVerifier _daVerifier = IDAVerifier(address(0x1234));
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addDAVerifier(_daVerifier);
+        executeLast(stateOracle);
         assertEq(stateOracle.daVerifiers(_daVerifier), true, "DA verifier should have been added");
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -1421,6 +1453,7 @@ contract StorageIntegrity is StateOracleBase {
         IDAVerifier newVerifier = IDAVerifier(address(0xBEEF));
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addDAVerifier(newVerifier);
+        executeLast(stateOracle);
         assertTrue(stateOracle.isDAVerifierRegistered(newVerifier), "New DA verifier registered");
 
         // Verify existing functionality still works after DA verifier registry operations
@@ -1433,8 +1466,10 @@ contract StorageIntegrity is StateOracleBase {
         IDAVerifier tempVerifier = IDAVerifier(address(0xDEAD));
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addDAVerifier(tempVerifier);
+        executeLast(stateOracle);
         assertTrue(stateOracle.isDAVerifierRegistered(tempVerifier), "Temp verifier should be registered");
         stateOracle.removeDAVerifier(tempVerifier);
+        executeLast(stateOracle);
         assertFalse(stateOracle.isDAVerifierRegistered(tempVerifier), "Temp verifier should be removed");
         vm.stopPrank();
 

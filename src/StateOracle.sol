@@ -490,10 +490,15 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         emit ManagerTransferred(contractAddress, newManager);
     }
 
-    /// @notice Adds an authorization module to the state oracle
+    /// @notice Schedules adding an authorization module after D
     /// @param adminVerifier The admin verifier to add
     function addAdminVerifier(IAdminVerifier adminVerifier) external onlyGovernance {
-        _addAdminVerifier(adminVerifier);
+        require(!adminVerifiers.isRegistered(adminVerifier), AdminVerifierRegistry.AdminVerifierAlreadyRegistered());
+        _scheduleAdministration(
+            keccak256(abi.encode("adminVerifier", adminVerifier)),
+            address(this),
+            abi.encodeCall(this.applyAdminVerifierChange, (adminVerifier, true))
+        );
     }
 
     /// @notice Internal function to add an admin verifier
@@ -502,10 +507,24 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         adminVerifiers.add(adminVerifier);
     }
 
-    /// @notice Removes an authorization module from the state oracle
+    /// @notice Schedules removing an authorization module after D
     /// @param adminVerifier The admin verifier to remove
     function removeAdminVerifier(IAdminVerifier adminVerifier) external onlyGovernance {
-        adminVerifiers.remove(adminVerifier);
+        require(adminVerifiers.isRegistered(adminVerifier), AdminVerifierRegistry.AdminVerifierNotRegistered());
+        _scheduleAdministration(
+            keccak256(abi.encode("adminVerifier", adminVerifier)),
+            address(this),
+            abi.encodeCall(this.applyAdminVerifierChange, (adminVerifier, false))
+        );
+    }
+
+    /// @notice Applies a matured admin-verifier registry proposal through this oracle's timelock.
+    /// @dev Existing managers and assertion windows are unaffected by registry removal.
+    /// @param verifier Affected admin verifier.
+    /// @param registered True to add, false to remove.
+    function applyAdminVerifierChange(IAdminVerifier verifier, bool registered) external onlyTimelock {
+        if (registered) adminVerifiers.add(verifier);
+        else adminVerifiers.remove(verifier);
     }
 
     /// @notice Checks if an admin verifier is registered
@@ -515,10 +534,15 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         return adminVerifiers.isRegistered(adminVerifier);
     }
 
-    /// @notice Adds a DA verifier to the registry
+    /// @notice Schedules adding a DA verifier after D
     /// @param daVerifier The DA verifier to add
     function addDAVerifier(IDAVerifier daVerifier) external onlyGovernance {
-        _addDAVerifier(daVerifier);
+        require(!daVerifiers.isRegistered(daVerifier), DAVerifierRegistry.DAVerifierAlreadyRegistered());
+        _scheduleAdministration(
+            keccak256(abi.encode("daVerifier", daVerifier)),
+            address(this),
+            abi.encodeCall(this.applyDAVerifierChange, (daVerifier, true))
+        );
     }
 
     /// @notice Internal function to add a DA verifier
@@ -527,10 +551,24 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         daVerifiers.add(daVerifier);
     }
 
-    /// @notice Removes a DA verifier from the registry
+    /// @notice Schedules removing a DA verifier after D
     /// @param daVerifier The DA verifier to remove
     function removeDAVerifier(IDAVerifier daVerifier) external onlyGovernance {
-        daVerifiers.remove(daVerifier);
+        require(daVerifiers.isRegistered(daVerifier), DAVerifierRegistry.DAVerifierNotRegistered());
+        _scheduleAdministration(
+            keccak256(abi.encode("daVerifier", daVerifier)),
+            address(this),
+            abi.encodeCall(this.applyDAVerifierChange, (daVerifier, false))
+        );
+    }
+
+    /// @notice Applies a matured DA-verifier registry proposal through this oracle's timelock.
+    /// @dev Removal blocks future assertion additions using this verifier, not existing assertion lifecycles.
+    /// @param verifier Affected DA verifier.
+    /// @param registered True to add, false to remove.
+    function applyDAVerifierChange(IDAVerifier verifier, bool registered) external onlyTimelock {
+        if (registered) daVerifiers.add(verifier);
+        else daVerifiers.remove(verifier);
     }
 
     /// @notice Checks if a DA verifier is registered
