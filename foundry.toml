@@ -10,6 +10,10 @@ optimizer_runs = 200
 # recompiles every file (3.26s vs 0.11s).
 extra_output = ["storageLayout"]
 
+[profile.snapshot]
+# RPC-dependent fork tests are rehearsed separately, not included in deterministic gas snapshots.
+no_match_contract = "StateOracleUpgradeForkTest"
+
 [lint]
 exclude_lints = ["mixed-case-function", "mixed-case-variable"]
 
