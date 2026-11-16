@@ -64,14 +64,36 @@ Typical data availability layers include network-hosted DA servers, decentralize
 
 ### State Oracle Administration
 
-The State Oracle owner retains privileged controls as a safety net for protocol operations:
+Administrative entrypoints now **schedule proposals**, rather than changing effective state immediately.
+Each oracle's `StateOracleTimelock` starts with D = 3 days (259,200 seconds), with a hard 3-day floor.
+Only that oracle proxy proposes/executes through it; it has no external administrator.
 
-- **Add or remove admin verifiers:** Adjust which verification modules are authorized to verify ownership of new assertion adopters.
-- **Register or revoke managers:** Directly assign, revoke, or reset managers for assertion adopters when necessary.
-- **Remove assertions:** Forcefully deactivate assertions if malicious or unwanted logic is introduced, or if a project requests emergency removal.
-- **Add or remove DA verifiers:** Adjust which data availability verification modules are authorized for use when adding assertions (`addDAVerifier`, `removeDAVerifier`).
+- Role grants, revocations and self-renunciation, ownership transfer/renunciation, admin/DA verifier registry changes, caller whitelist changes (including while disabled), and all assertion-cap changes wait D.
+- Read the operation ID from `AdministrationScheduled`, then inspect its exact payload and `readyAt` with `administrationOperation(id)`. Anyone can relay `executeAdministration(id)` once ready. `isOperationReady` on the controller is not the same as `isOperationDone`; effective changes happen only on execution.
+- Only one pending proposal per resource is allowed (for example, a role/account or whitelist account). Conflicting changes must wait for execution and then schedule a fresh delay. Cancellation is unavailable.
+- Ownership nomination is visible immediately, but acceptance requires both execution of that nomination's delayed authorization and consent from the nominated account. Renouncing ownership is delayed too.
+- `scheduleDelayUpdate` waits the current D. Only one D change may be pending per oracle, so queued increases/decreases cannot execute back-to-back under the old delay. Existing proposals keep their original deadlines.
+- Guardian `revokeManager` is immediate and clears pending handovers. Re-registration waits until `registrationAvailableAt(adopter)`, which snapshots current D at revocation. Later D changes do not alter that deadline. Expiry does not install a manager; the caller must still pass whitelist and admin-verifier checks. Existing valid approvals remain usable without an extra serial wait.
+- Assertion add/remove and `resetStorage` retain `ASSERTION_TIMELOCK_BLOCKS`, independently of D. Guardian assertion removal also retains this block delay. Revocation and re-registration preserve assertion windows and counts.
+- Caller whitelist removal only blocks registration and additions; it does not prevent a manager removing assertions, transferring management or resetting storage. Lowering the cap, even to zero, preserves existing assertions and affects subsequent additions.
 
-These controls are intended strictly for emergency response scenarios—such as attacks or lost manager keys—and should be exercised with operational safeguards to avoid disrupting legitimate protocol activity.
+Existing proxies deploy their own controller through `initializeTimelockV2()` using Solady
+`reinitializer(2)` in a ProxyAdmin `upgradeAndCall`. Only the actual proxy admin can invoke that migration.
+Fresh deployments use the normal initializer to deploy their controller in the same transaction.
+ProxyAdmin ownership handover and delayed upgrade wrappers are deferred to ENG-6421 at this layer.
+Admin-verifier internal approval/ownership policy is unchanged (ENG-6426 is separate).
+Legacy revocations have no stored timestamp, so migration does not invent a retroactive recovery
+deadline for adopters that already had no manager.
+
+Existing oracle proxy addresses, bytecode and ProxyAdmin remain unchanged: the upgrade replaces only
+the implementation and runs the version-2 initializer through the existing ProxyAdmin. Deploy the new
+implementation with the existing assertion block delay; it has no proxy-specific constructor bindings.
+All nine existing storage fields (slots 0–7) and assertion structs remain exactly unchanged. The only
+new oracle storage is its controller address in the ERC-7201 namespace
+`phylax.storage.StateOracleAdministration`. Queue records and recovery deadlines stay in the controller;
+ownership eligibility derives from its completed nomination operation. Setup also updates the existing
+Solady initialization-version slot. Later implementation upgrades must retain the namespace and controller
+history; rotating controllers is not part of this stack.
 
 ### Deployment
 
@@ -189,6 +211,8 @@ Versioned Alloy bindings for the StateOracle interfaces are maintained under
 [`bindings/rust`](bindings/rust). They expose the historical `0.2.0` interface as
 `credible_layer_contracts::state_oracle::v1::IStateOracleV1` and the interface
 introduced in `0.3.0` as `credible_layer_contracts::state_oracle::v2::IStateOracleV2`.
+The unreleased delayed-administration interface is `state_oracle::v3::IStateOracleV3`;
+V1 and V2 remain unchanged for existing deployments.
 Future breaking changes add another interface generation rather than replacing
 an existing one. The committed ABI snapshots allow the Rust crate to compile
 without installing Foundry.

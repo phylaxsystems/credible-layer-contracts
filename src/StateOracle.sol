@@ -63,6 +63,10 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @notice Thrown when attempting to disable an already disabled whitelist
     error WhitelistAlreadyDisabled();
 
+    /// @notice Re-registration must wait until the guardian revocation's fixed deadline
+    /// @param registrationAvailableAt Earliest registration timestamp in seconds
+    error ManagerRecoveryPending(uint256 registrationAvailableAt);
+
     /// @notice Struct containing assertion adopter data
     /// @param manager Address authorized to manage assertions
     /// @param pendingManager Nominated successor awaiting acceptance
@@ -101,6 +105,11 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @param contractAddress The address of the contract
     /// @param newManager The address accepting the transfer
     event ManagerTransferred(address indexed contractAddress, address indexed newManager);
+
+    /// @notice Manager revocation is immediate; registration becomes possible at the given timestamp
+    /// @param contractAddress Adopter whose manager was revoked
+    /// @param registrationAvailableAt Earliest registration timestamp in seconds
+    event ManagerRevoked(address indexed contractAddress, uint256 registrationAvailableAt);
 
     /// @notice Emitted when a new assertion is added
     /// @param assertionAdopter The assertion adopter the assertion is associated with
@@ -161,6 +170,14 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
 
     /// @notice Maximum number of assertions per assertion adopter
     uint16 public maxAssertionsPerAA;
+
+    /// @notice Earliest re-registration timestamp after revocation under this implementation; otherwise zero
+    /// @dev Deadlines live in the controller; migration does not invent historical deadlines.
+    /// @param contractAddress Adopter whose recovery deadline is queried
+    /// @return Earliest registration timestamp, or zero without recorded revocation
+    function registrationAvailableAt(address contractAddress) public view returns (uint256) {
+        return timelock().registrationAvailableAt(address(this), contractAddress);
+    }
 
     /// @notice Ensures caller is the manager of the contract
     /// @param contractAddress The address of the contract being managed
@@ -262,8 +279,8 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @param _initialWhitelist The initially admitted accounts.
     function _initialize(
         address admin,
-        IAdminVerifier[] memory _adminVerifiers,
-        IDAVerifier[] memory _daVerifiers,
+        IAdminVerifier[] calldata _adminVerifiers,
+        IDAVerifier[] calldata _daVerifiers,
         uint16 _maxAssertionsPerAA,
         bool _whitelistEnabled,
         address[] memory _initialWhitelist
@@ -292,6 +309,8 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         external
         onlyWhitelisted
     {
+        uint256 availableAt = registrationAvailableAt(contractAddress);
+        require(block.timestamp >= availableAt, ManagerRecoveryPending(availableAt));
         require(adminVerifiers.isRegistered(adminVerifier), AdminVerifierRegistry.AdminVerifierNotRegistered());
         require(adminVerifier.verifyAdmin(contractAddress, msg.sender, data), UnauthorizedRegistrant());
         require(assertionAdopters[contractAddress].manager == address(0), AssertionAdopterAlreadyRegistered());
@@ -354,16 +373,20 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @notice Schedules enabling the whitelist after D
     function enableWhitelist() external onlyGovernance {
         require(!whitelistEnabled, WhitelistAlreadyEnabled());
-        _scheduleAdministration(
-            keccak256("whitelistEnabled"), address(this), abi.encodeCall(this.applyWhitelistEnabled, (true))
-        );
+        _queueWhitelistEnabled(true);
     }
 
     /// @notice Schedules disabling the whitelist after D
     function disableWhitelist() external onlyGovernance {
         require(whitelistEnabled, WhitelistAlreadyDisabled());
+        _queueWhitelistEnabled(false);
+    }
+
+    /// @notice Encodes either direction of an authorized caller-whitelist toggle.
+    /// @param enabled Whether caller admission checks become enabled.
+    function _queueWhitelistEnabled(bool enabled) internal {
         _scheduleAdministration(
-            keccak256("whitelistEnabled"), address(this), abi.encodeCall(this.applyWhitelistEnabled, (false))
+            keccak256("whitelistEnabled"), address(this), abi.encodeCall(this.applyWhitelistEnabled, (enabled))
         );
     }
 
@@ -379,11 +402,7 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @param account The address to add
     function addToWhitelist(address account) external onlyOperator {
         require(!whitelist[account], AlreadyWhitelisted(account));
-        _scheduleAdministration(
-            keccak256(abi.encode("whitelist", account)),
-            address(this),
-            abi.encodeCall(this.applyWhitelistAccount, (account, true))
-        );
+        _queueWhitelistAccount(account, true);
     }
 
     /// @notice Admits a caller during initialization or an authorized effective change.
@@ -398,10 +417,17 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @param account The address to remove
     function removeFromWhitelist(address account) external onlyOperator {
         require(whitelist[account], AccountNotWhitelisted(account));
+        _queueWhitelistAccount(account, false);
+    }
+
+    /// @notice Encodes either direction of an authorized caller-admission change.
+    /// @param account Caller whose membership changes.
+    /// @param allowed True to add, false to remove.
+    function _queueWhitelistAccount(address account, bool allowed) internal {
         _scheduleAdministration(
             keccak256(abi.encode("whitelist", account)),
             address(this),
-            abi.encodeCall(this.applyWhitelistAccount, (account, false))
+            abi.encodeCall(this.applyWhitelistAccount, (account, allowed))
         );
     }
 
@@ -510,7 +536,10 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @param contractAddress The address of the assertion adopter
     function revokeManager(address contractAddress) external onlyGuardian {
         require(assertionAdopters[contractAddress].manager != address(0), AssertionAdopterNotRegistered());
+        _requireAdministrationReady();
+        uint256 availableAt = timelock().startManagerRecovery(contractAddress);
         _transferManager(contractAddress, address(0));
+        emit ManagerRevoked(contractAddress, availableAt);
     }
 
     /// @notice Internal function to transfer the manager role
@@ -526,11 +555,7 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @param adminVerifier The admin verifier to add
     function addAdminVerifier(IAdminVerifier adminVerifier) external onlyGovernance {
         require(!adminVerifiers.isRegistered(adminVerifier), AdminVerifierRegistry.AdminVerifierAlreadyRegistered());
-        _scheduleAdministration(
-            keccak256(abi.encode("adminVerifier", adminVerifier)),
-            address(this),
-            abi.encodeCall(this.applyAdminVerifierChange, (adminVerifier, true))
-        );
+        _queueAdminVerifierChange(adminVerifier, true);
     }
 
     /// @notice Internal function to add an admin verifier
@@ -543,10 +568,17 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @param adminVerifier The admin verifier to remove
     function removeAdminVerifier(IAdminVerifier adminVerifier) external onlyGovernance {
         require(adminVerifiers.isRegistered(adminVerifier), AdminVerifierRegistry.AdminVerifierNotRegistered());
+        _queueAdminVerifierChange(adminVerifier, false);
+    }
+
+    /// @notice Encodes either direction of an authorized admin-verifier registry change.
+    /// @param verifier Affected admin verifier.
+    /// @param registered True to add, false to remove.
+    function _queueAdminVerifierChange(IAdminVerifier verifier, bool registered) internal {
         _scheduleAdministration(
-            keccak256(abi.encode("adminVerifier", adminVerifier)),
+            keccak256(abi.encode("adminVerifier", verifier)),
             address(this),
-            abi.encodeCall(this.applyAdminVerifierChange, (adminVerifier, false))
+            abi.encodeCall(this.applyAdminVerifierChange, (verifier, registered))
         );
     }
 
@@ -570,11 +602,7 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @param daVerifier The DA verifier to add
     function addDAVerifier(IDAVerifier daVerifier) external onlyGovernance {
         require(!daVerifiers.isRegistered(daVerifier), DAVerifierRegistry.DAVerifierAlreadyRegistered());
-        _scheduleAdministration(
-            keccak256(abi.encode("daVerifier", daVerifier)),
-            address(this),
-            abi.encodeCall(this.applyDAVerifierChange, (daVerifier, true))
-        );
+        _queueDAVerifierChange(daVerifier, true);
     }
 
     /// @notice Internal function to add a DA verifier
@@ -587,10 +615,17 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @param daVerifier The DA verifier to remove
     function removeDAVerifier(IDAVerifier daVerifier) external onlyGovernance {
         require(daVerifiers.isRegistered(daVerifier), DAVerifierRegistry.DAVerifierNotRegistered());
+        _queueDAVerifierChange(daVerifier, false);
+    }
+
+    /// @notice Encodes either direction of an authorized DA-verifier registry change.
+    /// @param verifier Affected DA verifier.
+    /// @param registered True to add, false to remove.
+    function _queueDAVerifierChange(IDAVerifier verifier, bool registered) internal {
         _scheduleAdministration(
-            keccak256(abi.encode("daVerifier", daVerifier)),
+            keccak256(abi.encode("daVerifier", verifier)),
             address(this),
-            abi.encodeCall(this.applyDAVerifierChange, (daVerifier, false))
+            abi.encodeCall(this.applyDAVerifierChange, (verifier, registered))
         );
     }
 
