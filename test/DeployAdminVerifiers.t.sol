@@ -14,6 +14,8 @@ import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transpa
 import {DAVerifierMock} from "./utils/DAVerifierMock.sol";
 import {OwnableAdopter} from "./utils/Adopter.sol";
 import {CreateXTestDouble} from "./utils/CreateXTestDouble.sol";
+import {ProxyHelper} from "./utils/ProxyHelper.t.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 contract DeployCoreHarness is DeployCore {
     function configureAdminVerifiers(
@@ -63,8 +65,7 @@ contract DeployTestingAdminVerifiersHarness is DeployTestingAdminVerifiers {
 }
 
 /// @notice Tests production and testing-only verifier deployment configuration.
-contract DeployAdminVerifiersTest is Test {
-    address constant ADMIN = address(uint160(uint256(keccak256(abi.encode("pcl.test.DeployAdminVerifiers.ADMIN")))));
+contract DeployAdminVerifiersTest is ProxyHelper {
     address constant OWNER = address(uint160(uint256(keccak256(abi.encode("pcl.test.DeployAdminVerifiers.OWNER")))));
     address constant WHITELIST_ADMIN =
         address(uint160(uint256(keccak256(abi.encode("pcl.test.DeployAdminVerifiers.WHITELIST_ADMIN")))));
@@ -114,17 +115,31 @@ contract DeployAdminVerifiersTest is Test {
         deployer.deployAdminVerifiersForTest();
     }
 
+    /// @notice Testing deployment queues verifier additions that become effective only after D and execution.
     function test_testingScriptDeploysAndAddsTestVerifiersToStateOracle() public {
         DeployTestingAdminVerifiersHarness deployer = new DeployTestingAdminVerifiersHarness();
         StateOracle stateOracle = _deployStateOracle(address(deployer), new IAdminVerifier[](0));
         deployer.configureTestingAdminVerifiers(address(stateOracle), SUPER_ADMIN, true, true, true);
 
+        vm.recordLogs();
         address[] memory verifiers = deployer.runForTest();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
         assertEq(verifiers.length, 2);
         assertEq(CreateXTestDouble(CREATE_X_ADDRESS).deploymentCount(), 2);
 
         assertTrue(AdminVerifierSuperAdmin(verifiers[0]).verifyAdmin(address(1), SUPER_ADMIN, ""));
         assertTrue(IAdminVerifier(verifiers[1]).verifyAdmin(address(1), OTHER, ""));
+        assertFalse(stateOracle.isAdminVerifierRegistered(IAdminVerifier(verifiers[0])));
+        assertFalse(stateOracle.isAdminVerifierRegistered(IAdminVerifier(verifiers[1])));
+        vm.warp(block.timestamp + 3 days);
+        for (uint256 i; i < logs.length; ++i) {
+            if (
+                logs[i].emitter == address(stateOracle)
+                    && logs[i].topics[0] == keccak256("AdministrationScheduled(bytes32,bytes32,address,uint256)")
+            ) {
+                stateOracle.executeAdministration(logs[i].topics[1]);
+            }
+        }
         assertTrue(stateOracle.isAdminVerifierRegistered(IAdminVerifier(verifiers[0])));
         assertTrue(stateOracle.isAdminVerifierRegistered(IAdminVerifier(verifiers[1])));
     }
@@ -195,8 +210,7 @@ contract DeployAdminVerifiersTest is Test {
             true,
             new address[](0)
         );
-        return
-            StateOracle(address(new TransparentUpgradeableProxy(address(implementation), address(this), initCallData)));
+        return StateOracle(deployProxy(address(implementation), initCallData));
     }
 
     function _deployStateOracleImplementation() internal returns (StateOracle) {

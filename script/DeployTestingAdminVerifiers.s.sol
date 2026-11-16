@@ -9,6 +9,7 @@ import {console2} from "forge-std/console2.sol";
 import {Script} from "forge-std/Script.sol";
 import {CreateXDeployer} from "./CreateXDeployer.s.sol";
 
+/// @notice Deploys test-only admin verifiers and optionally queues their oracle registration.
 contract DeployTestingAdminVerifiers is Script, CreateXDeployer {
     address stateOracle;
     address superAdmin;
@@ -118,10 +119,15 @@ contract DeployTestingAdminVerifiers is Script, CreateXDeployer {
         }
     }
 
+    /// @notice Queues addition of a test-only verifier and logs the operation ID for later execution.
+    /// @dev The broadcasting caller must hold governance authority; registration is not immediate.
+    /// @param _stateOracle Oracle receiving the proposal.
+    /// @param verifier Deployed test verifier to register.
     function _addAdminVerifier(address _stateOracle, address verifier) internal {
         require(_stateOracle != address(0), "Invalid state oracle");
         require(verifier != address(0), "Invalid admin verifier");
         StateOracle(_stateOracle).addAdminVerifier(IAdminVerifier(verifier));
-        console2.log("Testing admin verifier added to StateOracle", verifier);
+        console2.log("Testing admin verifier addition scheduled in StateOracle", verifier);
+        console2.logBytes32(StateOracle(_stateOracle).latestAdministrationOperation());
     }
 }

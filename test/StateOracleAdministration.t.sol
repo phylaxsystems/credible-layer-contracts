@@ -13,6 +13,10 @@ import {Initializable} from "solady/utils/Initializable.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
 import {IDAVerifier} from "../src/interfaces/IDAVerifier.sol";
+import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.sol";
+import {DAVerifierMock} from "./utils/DAVerifierMock.sol";
+import {OwnableAdopter} from "./utils/Adopter.sol";
+import {AdminVerifierRegistry} from "../src/lib/AdminVerifierRegistry.sol";
 import {ProxyHelper} from "./utils/ProxyHelper.t.sol";
 import {StateOracleWindowLayoutBaseline} from "./utils/StateOracleWindowLayoutBaseline.sol";
 
@@ -372,5 +376,98 @@ contract StateOracleAdministrationTest is ProxyHelper {
         vm.expectRevert();
         oracle.transferOwnership(address(0));
         vm.stopPrank();
+    }
+
+    /// @notice Admin and DA verifier registry changes wait D without rewriting existing adopter or assertion state.
+    function test_verifierLifecycleWaitsAndPreservesExistingPolicy() public {
+        IAdminVerifier adminVerifier = new AdminVerifierOwner();
+        IDAVerifier daVerifier = new DAVerifierMock();
+        address manager = address(0xB0B);
+        address adopter = address(new OwnableAdopter(manager));
+        vm.prank(governor);
+        oracle.addAdminVerifier(adminVerifier);
+        bytes32 addAdmin = oracle.latestAdministrationOperation();
+        vm.prank(governor);
+        oracle.addDAVerifier(daVerifier);
+        bytes32 addDA = oracle.latestAdministrationOperation();
+        assertFalse(oracle.adminVerifiers(adminVerifier));
+        assertFalse(oracle.daVerifiers(daVerifier));
+        vm.warp(oracle.administrationOperation(addDA).readyAt - 1);
+        vm.expectPartialRevert(TimelockController.TimelockUnexpectedOperationState.selector);
+        oracle.executeAdministration(addAdmin);
+        vm.expectPartialRevert(TimelockController.TimelockUnexpectedOperationState.selector);
+        oracle.executeAdministration(addDA);
+        vm.prank(manager);
+        vm.expectRevert(AdminVerifierRegistry.AdminVerifierNotRegistered.selector);
+        oracle.registerAssertionAdopter(adopter, adminVerifier, "");
+        _execute(oracle, addAdmin);
+        oracle.executeAdministration(addDA);
+        vm.startPrank(manager);
+        oracle.registerAssertionAdopter(adopter, adminVerifier, "");
+        oracle.addAssertion(adopter, bytes32(uint256(1)), daVerifier, "", "");
+        vm.stopPrank();
+        (uint256 activation,) = oracle.getAssertionWindow(adopter, bytes32(uint256(1)));
+        vm.prank(governor);
+        oracle.removeAdminVerifier(adminVerifier);
+        bytes32 removeAdmin = oracle.latestAdministrationOperation();
+        vm.prank(governor);
+        oracle.removeDAVerifier(daVerifier);
+        bytes32 removeDA = oracle.latestAdministrationOperation();
+        assertTrue(oracle.adminVerifiers(adminVerifier));
+        assertTrue(oracle.daVerifiers(daVerifier));
+        vm.warp(oracle.administrationOperation(removeDA).readyAt - 1);
+        vm.expectPartialRevert(TimelockController.TimelockUnexpectedOperationState.selector);
+        oracle.executeAdministration(removeAdmin);
+        vm.expectPartialRevert(TimelockController.TimelockUnexpectedOperationState.selector);
+        oracle.executeAdministration(removeDA);
+        _execute(oracle, removeAdmin);
+        oracle.executeAdministration(removeDA);
+        assertFalse(oracle.adminVerifiers(adminVerifier));
+        assertFalse(oracle.daVerifiers(daVerifier));
+        assertEq(oracle.getManager(adopter), manager);
+        assertEq(oracle.getAssertionCount(adopter), 1);
+        (uint256 unchanged,) = oracle.getAssertionWindow(adopter, bytes32(uint256(1)));
+        assertEq(unchanged, activation);
+        vm.prank(manager);
+        vm.expectRevert(StateOracle.DAVerifierNotRegistered.selector);
+        oracle.addAssertion(adopter, bytes32(uint256(2)), daVerifier, "", "");
+        vm.prank(manager);
+        oracle.removeAssertion(adopter, bytes32(uint256(1)));
+        vm.expectPartialRevert(TimelockController.TimelockUnexpectedOperationState.selector);
+        oracle.executeAdministration(addAdmin);
+        vm.prank(governor);
+        oracle.addAdminVerifier(adminVerifier);
+        assertFalse(oracle.adminVerifiers(adminVerifier));
+        executeLast(oracle);
+        assertTrue(oracle.adminVerifiers(adminVerifier));
+    }
+
+    /// @notice Verifier queues are oracle-specific and reject conflicts, direct callbacks and batch bypasses.
+    function test_verifierProposalsAreOracleSpecificAndCannotConflictOrBatchBypass() public {
+        IAdminVerifier verifier = new AdminVerifierOwner();
+        vm.prank(governor);
+        oracle.addAdminVerifier(verifier);
+        bytes32 id = oracle.latestAdministrationOperation();
+        vm.prank(governor);
+        peer.addAdminVerifier(verifier);
+        assertNotEq(id, peer.latestAdministrationOperation());
+        vm.prank(governor);
+        vm.expectPartialRevert(StateOracleAdministration.AdministrationOperationPending.selector);
+        oracle.addAdminVerifier(verifier);
+        vm.prank(governor);
+        vm.expectRevert(AdminVerifierRegistry.AdminVerifierNotRegistered.selector);
+        oracle.removeAdminVerifier(verifier);
+        vm.expectRevert(StateOracleAdministration.CallerNotTimelock.selector);
+        oracle.applyAdminVerifierChange(verifier, true);
+        vm.expectRevert(StateOracleAdministration.CallerNotTimelock.selector);
+        oracle.applyDAVerifierChange(IDAVerifier(address(verifier)), true);
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = abi.encodeCall(oracle.applyAdminVerifierChange, (verifier, true));
+        vm.prank(governor);
+        vm.expectPartialRevert(Batch.BatchError.selector);
+        oracle.batch(calls);
+        _execute(oracle, id);
+        assertTrue(oracle.adminVerifiers(verifier));
+        assertFalse(peer.adminVerifiers(verifier));
     }
 }

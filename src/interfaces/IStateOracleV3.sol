@@ -234,7 +234,7 @@ interface IStateOracleV3 {
     function acceptManagerTransfer(address contractAddress) external;
     /// @notice Accepts a pending ownership transfer as its nominee after delayed authorization executes.
     function acceptOwnership() external;
-    /// @notice Adds an admin verifier under governance authorization.
+    /// @notice Queues an admin verifier addition after the administration delay under governance authorization.
     /// @param adminVerifier Verifier to add.
     function addAdminVerifier(address adminVerifier) external;
     /// @notice Schedules assertion activation after verifying authority, capacity and DA.
@@ -250,7 +250,7 @@ interface IStateOracleV3 {
         bytes memory metadata,
         bytes memory proof
     ) external;
-    /// @notice Adds a DA verifier under governance authorization.
+    /// @notice Queues a DA verifier addition after the administration delay under governance authorization.
     /// @param daVerifier Verifier to add.
     function addDAVerifier(address daVerifier) external;
     /// @notice Adds a caller under operator authorization.
@@ -267,6 +267,14 @@ interface IStateOracleV3 {
     /// @param id Operation identifier.
     /// @return Exact payload, or an empty record if unknown.
     function administrationOperation(bytes32 id) external view returns (Operation memory);
+    /// @notice Applies a matured admin-verifier registry change, only through this oracle's timelock.
+    /// @param verifier Affected verifier.
+    /// @param registered True to add, false to remove.
+    function applyAdminVerifierChange(address verifier, bool registered) external;
+    /// @notice Applies a matured DA-verifier registry change, only through this oracle's timelock.
+    /// @param verifier Affected verifier.
+    /// @param registered True to add, false to remove.
+    function applyDAVerifierChange(address verifier, bool registered) external;
     /// @notice Applies a matured role change; callable only by this oracle's timelock.
     /// @param role Role to change.
     /// @param account Affected account.
@@ -410,7 +418,7 @@ interface IStateOracleV3 {
     /// @param adminVerifier Registered admin verifier.
     /// @param data Verifier-specific evidence.
     function registerAssertionAdopter(address contractAddress, address adminVerifier, bytes memory data) external;
-    /// @notice Removes an admin verifier under governance authorization.
+    /// @notice Queues an admin verifier removal after the administration delay under governance authorization.
     /// @param adminVerifier Verifier to remove.
     function removeAdminVerifier(address adminVerifier) external;
     /// @notice Schedules assertion deactivation after the assertion lifecycle delay.
@@ -421,7 +429,7 @@ interface IStateOracleV3 {
     /// @param contractAddress Adopter address.
     /// @param assertionId Assertion to remove after the block-based lifecycle delay.
     function removeAssertionByGuardian(address contractAddress, bytes32 assertionId) external;
-    /// @notice Removes a DA verifier under governance authorization.
+    /// @notice Queues a DA verifier removal after the administration delay under governance authorization.
     /// @param daVerifier Verifier to remove.
     function removeDAVerifier(address daVerifier) external;
     /// @notice Removes a caller under operator authorization.
