@@ -3,6 +3,8 @@ pragma solidity ^0.8.28;
 
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {StateOracleAdministration} from "./StateOracleAdministration.sol";
+import {StateOracleTimelock} from "./StateOracleTimelock.sol";
 
 /// @title StateOracleAccessControl
 /// @author @fredo (luehrs.fred@gmail.com)
@@ -45,7 +47,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 /// - Owner cannot renounce DEFAULT_ADMIN_ROLE through renounceRole()
 /// - renounceOwnership() maintains invariant by granting role to address(0)
 /// - All role transfers are atomic to prevent invariant violations
-abstract contract StateOracleAccessControl is Ownable2Step, AccessControl {
+abstract contract StateOracleAccessControl is Ownable2Step, AccessControl, StateOracleAdministration {
     /// @notice Role for governance operations (protocol administration)
     /// @dev Managed by DEFAULT_ADMIN_ROLE (owner)
     bytes32 public constant GOVERNANCE_ROLE = keccak256("GOVERNANCE_ROLE");
@@ -90,6 +92,16 @@ abstract contract StateOracleAccessControl is Ownable2Step, AccessControl {
     modifier onlyOperator() {
         _checkRole(OPERATOR_ROLE);
         _;
+    }
+
+    /// @notice Proposes this oracle's administration delay change; only one may be pending per oracle.
+    /// @dev The current delay governs execution, including a decrease; three days is the hard floor.
+    /// @param newDelay Proposed delay in seconds.
+    /// @return Identifier of the queued delay change.
+    function scheduleDelayUpdate(uint256 newDelay) external onlyOwner returns (bytes32) {
+        return _scheduleAdministration(
+            keccak256("delay"), address(timelock()), abi.encodeCall(StateOracleTimelock.updateDelay, (newDelay))
+        );
     }
 
     /// @notice Returns all roles in the system

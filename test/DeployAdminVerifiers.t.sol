@@ -62,6 +62,7 @@ contract DeployTestingAdminVerifiersHarness is DeployTestingAdminVerifiers {
     }
 }
 
+/// @notice Tests production and testing-only verifier deployment configuration.
 contract DeployAdminVerifiersTest is Test {
     address constant ADMIN = address(uint160(uint256(keccak256(abi.encode("pcl.test.DeployAdminVerifiers.ADMIN")))));
     address constant OWNER = address(uint160(uint256(keccak256(abi.encode("pcl.test.DeployAdminVerifiers.OWNER")))));
@@ -174,6 +175,10 @@ contract DeployAdminVerifiersTest is Test {
         deployer.runForTest();
     }
 
+    /// @notice Deploys a fresh oracle with the requested admin verifiers and its own timelock.
+    /// @param oracleAdmin Initial oracle owner and role holder.
+    /// @param adminVerifiers Initial admin verifier registry.
+    /// @return Initialized oracle proxy.
     function _deployStateOracle(address oracleAdmin, IAdminVerifier[] memory adminVerifiers)
         internal
         returns (StateOracle)
@@ -182,7 +187,13 @@ contract DeployAdminVerifiersTest is Test {
         IDAVerifier[] memory daVerifiers = new IDAVerifier[](1);
         daVerifiers[0] = IDAVerifier(address(new DAVerifierMock()));
         bytes memory initCallData = abi.encodeWithSelector(
-            StateOracle.initialize.selector, oracleAdmin, adminVerifiers, daVerifiers, MAX_ASSERTIONS_PER_AA
+            StateOracle.initializeWithWhitelist.selector,
+            oracleAdmin,
+            adminVerifiers,
+            daVerifiers,
+            MAX_ASSERTIONS_PER_AA,
+            true,
+            new address[](0)
         );
         return
             StateOracle(address(new TransparentUpgradeableProxy(address(implementation), address(this), initCallData)));

@@ -55,7 +55,9 @@ contract DeployCoreWithStagingIntegrationTest is Test {
                 new TransparentUpgradeableProxy(
                     address(prodImpl),
                     admin,
-                    abi.encodeCall(StateOracle.initialize, (admin, adminVerifiers, daVfrs, 10))
+                    abi.encodeCall(
+                        StateOracle.initializeWithWhitelist, (admin, adminVerifiers, daVfrs, 10, true, new address[](0))
+                    )
                 )
             )
         );
@@ -67,7 +69,9 @@ contract DeployCoreWithStagingIntegrationTest is Test {
                 new TransparentUpgradeableProxy(
                     address(stagingImpl),
                     admin,
-                    abi.encodeCall(StateOracle.initialize, (admin, adminVerifiers, daVfrs, 5))
+                    abi.encodeCall(
+                        StateOracle.initializeWithWhitelist, (admin, adminVerifiers, daVfrs, 5, true, new address[](0))
+                    )
                 )
             )
         );

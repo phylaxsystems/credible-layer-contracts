@@ -14,6 +14,7 @@ import {CreateXDeployer} from "./CreateXDeployer.s.sol";
 import {DeployCore} from "./DeployCore.s.sol";
 import {console2} from "forge-std/console2.sol";
 
+/// @notice Deploys oracle infrastructure deterministically through CreateX.
 contract DeployCoreWithCreateX is DeployCore, CreateXDeployer {
     function _deployDAVerifierECDSA() internal override returns (address) {
         address daVerifier = _deployCreate3(
@@ -107,6 +108,16 @@ contract DeployCoreWithCreateX is DeployCore, CreateXDeployer {
         );
     }
 
+    /// @notice Deploys and fully initializes an oracle proxy using a named CreateX salt.
+    /// @param stateOracle Implementation to install.
+    /// @param adminVerifierDeployments Initial admin verifiers.
+    /// @param daVerifierAddresses Initial DA verifiers.
+    /// @param maxAssertions Initial per-adopter assertion cap.
+    /// @param whitelistEnabled Initial caller-admission switch.
+    /// @param initialWhitelist Initially admitted callers.
+    /// @param saltName Deployment salt name.
+    /// @param contractName Human-readable logging label.
+    /// @return proxyAddress Initialized proxy with its own administration timelock.
     function _deployStateOracleProxyWithConfig(
         address stateOracle,
         address[] memory adminVerifierDeployments,

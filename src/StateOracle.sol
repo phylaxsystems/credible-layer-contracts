@@ -9,6 +9,9 @@ import {Initializable} from "solady/utils/Initializable.sol";
 import {AdminVerifierRegistry} from "./lib/AdminVerifierRegistry.sol";
 import {DAVerifierRegistry} from "./lib/DAVerifierRegistry.sol";
 import {StateOracleAccessControl} from "./StateOracleAccessControl.sol";
+import {StateOracleTimelock} from "./StateOracleTimelock.sol";
+import {StateOracleAdministration} from "./StateOracleAdministration.sol";
+import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 /// @title StateOracle
 /// @author @fredo (luehrs.fred@gmail.com)
@@ -50,8 +53,10 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     /// @notice Thrown when whitelist is enabled and caller is not whitelisted
     error NotWhitelisted();
     /// @notice Thrown when attempting to add an account that is already whitelisted
+    /// @param account The account already admitted.
     error AlreadyWhitelisted(address account);
     /// @notice Thrown when attempting to remove an account that is not whitelisted
+    /// @param account The account absent from the whitelist.
     error AccountNotWhitelisted(address account);
     /// @notice Thrown when attempting to enable an already enabled whitelist
     error WhitelistAlreadyEnabled();
@@ -60,6 +65,8 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
 
     /// @notice Struct containing assertion adopter data
     /// @param manager Address authorized to manage assertions
+    /// @param pendingManager Nominated successor awaiting acceptance
+    /// @param assertionCount Registered assertions whose removal has not been requested
     /// @param assertions Mapping of assertion IDs to assertion windows, describing the assertion's lifecycle
     struct AssertionAdopter {
         address manager;
@@ -181,7 +188,8 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         require(manager == msg.sender, UnauthorizedManager());
     }
 
-    /// @notice Initializes the contract with a timelock period
+    /// @notice Deploys implementation bytecode with a fixed assertion lifecycle delay.
+    /// @dev Does not initialize proxy storage. Locks initializers on the implementation itself.
     /// @param assertionTimelockBlocks Number of blocks to wait before assertions become active/inactive
     constructor(uint256 assertionTimelockBlocks) Ownable(msg.sender) {
         require(assertionTimelockBlocks > 0, InvalidAssertionTimelock());
@@ -190,21 +198,22 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         _disableInitializers();
     }
 
-    /// @notice Initializes the contract
-    /// @param admin The address of the admin
-    /// @param _adminVerifiers The admin verifiers to add
-    /// @param _daVerifiers The DA verifiers to add
-    /// @param _maxAssertionsPerAA Maximum number of assertions per assertion adopter
+    /// @notice Initializes a fresh proxy with caller whitelisting enabled and no initially admitted callers.
+    /// @param admin The initial owner and role holder.
+    /// @param _adminVerifiers The initial admin verifier registry.
+    /// @param _daVerifiers The initial DA verifier registry.
+    /// @param _maxAssertionsPerAA The initial per-adopter assertion cap.
     function initialize(
         address admin,
         IAdminVerifier[] calldata _adminVerifiers,
         IDAVerifier[] calldata _daVerifiers,
         uint16 _maxAssertionsPerAA
-    ) external initializer {
+    ) external {
         _initialize(admin, _adminVerifiers, _daVerifiers, _maxAssertionsPerAA, true, new address[](0));
     }
 
-    /// @notice Initializes the contract with an explicit whitelist configuration
+    /// @notice Initializes a fresh proxy and deploys its own three-day administration timelock.
+    /// @dev Pass this call to the proxy constructor so no uninitialized proxy is exposed.
     /// @param admin The address to set as the admin
     /// @param _adminVerifiers The admin verifiers to add
     /// @param _daVerifiers The DA verifiers to add
@@ -218,10 +227,39 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         uint16 _maxAssertionsPerAA,
         bool _whitelistEnabled,
         address[] calldata _initialWhitelist
-    ) external initializer {
+    ) external {
         _initialize(admin, _adminVerifiers, _daVerifiers, _maxAssertionsPerAA, _whitelistEnabled, _initialWhitelist);
     }
 
+    /// @notice Deploys the administration timelock during an existing version-1 proxy's upgradeAndCall.
+    /// @dev This hook does not transfer ProxyAdmin ownership or implement delayed upgrades.
+    /// Those handovers must be performed atomically by the separately reviewed migration.
+    /// Preserves application state; writes the controller namespace and existing initialization-version slot.
+    function initializeTimelockV2() external onlyProxyAdminMigration reinitializer(2) {
+        _initializeTimelock();
+    }
+
+    /// @notice Allows migration only through the proxy's existing upgrade admin, once.
+    /// @dev Relies on the existing ERC-1967 admin slot's integrity. Fresh proxies start at version 2.
+    modifier onlyProxyAdminMigration() {
+        require(_getInitializedVersion() == 1 && msg.sender == ERC1967Utils.getAdmin(), InvalidInitialization());
+        _;
+    }
+
+    /// @notice Prevents a fresh initialization entrypoint from resetting a legacy or migrated proxy.
+    modifier onlyUninitialized() {
+        require(_getInitializedVersion() == 0, InvalidInitialization());
+        _;
+    }
+
+    /// @notice Sets fresh application state and the timelock through the shared version-2 setup path.
+    /// @dev The version-2 migration never resets these fields.
+    /// @param admin The initial owner and holder of all delegatable roles.
+    /// @param _adminVerifiers The initial admin verifier registry entries.
+    /// @param _daVerifiers The initial DA verifier registry entries.
+    /// @param _maxAssertionsPerAA The initial per-adopter assertion cap.
+    /// @param _whitelistEnabled Whether caller admission is initially enforced.
+    /// @param _initialWhitelist The initially admitted accounts.
     function _initialize(
         address admin,
         IAdminVerifier[] memory _adminVerifiers,
@@ -229,7 +267,7 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         uint16 _maxAssertionsPerAA,
         bool _whitelistEnabled,
         address[] memory _initialWhitelist
-    ) internal {
+    ) internal onlyUninitialized reinitializer(2) {
         _initializeRoles(admin);
 
         whitelistEnabled = _whitelistEnabled;
@@ -243,6 +281,7 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
             _addToWhitelist(_initialWhitelist[i]);
         }
         _setMaxAssertionsPerAA(_maxAssertionsPerAA);
+        _initializeTimelock();
     }
 
     /// @notice Registers a new assertion adopter
@@ -332,6 +371,8 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
         _addToWhitelist(account);
     }
 
+    /// @notice Admits a caller during initialization or an authorized effective change.
+    /// @param account The caller to admit.
     function _addToWhitelist(address account) internal {
         require(!whitelist[account], AlreadyWhitelisted(account));
         whitelist[account] = true;

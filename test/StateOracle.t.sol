@@ -15,6 +15,7 @@ import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.s
 import {AdminVerifierRegistry} from "../src/lib/AdminVerifierRegistry.sol";
 import {DAVerifierRegistry} from "../src/lib/DAVerifierRegistry.sol";
 
+/// @notice Shared initialized-oracle fixture for lifecycle and administration tests.
 contract StateOracleBase is Test, ProxyHelper {
     address constant OWNER = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.OWNER")))));
     address constant DEPLOYER = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.DEPLOYER")))));
@@ -35,6 +36,7 @@ contract StateOracleBase is Test, ProxyHelper {
         _;
     }
 
+    /// @notice Initializes an oracle and disables caller admission for isolated lifecycle tests.
     function setUp() public virtual {
         DAVerifierMock _daVerifierMock = new DAVerifierMock();
         daVerifierMock = IDAVerifier(address(_daVerifierMock));
@@ -46,7 +48,13 @@ contract StateOracleBase is Test, ProxyHelper {
         daVerifiers[0] = daVerifierMock;
 
         bytes memory data = abi.encodeWithSelector(
-            StateOracle.initialize.selector, STATE_ORACLE_ADMIN, verifiers, daVerifiers, MAX_ASSERTIONS_PER_AA
+            StateOracle.initializeWithWhitelist.selector,
+            STATE_ORACLE_ADMIN,
+            verifiers,
+            daVerifiers,
+            MAX_ASSERTIONS_PER_AA,
+            true,
+            new address[](0)
         );
         stateOracle = StateOracle(deployProxy(address(implementation), data));
 
@@ -86,15 +94,43 @@ contract Constructor is StateOracleBase {
     }
 }
 
+/// @notice Tests fresh initialization configuration and replay prevention.
 contract Initialize is StateOracleBase {
     address constant INITIAL_WHITELIST_ACCOUNT = address(0xBEEF);
     IDAVerifier additionalDAVerifier;
 
+    /// @notice The original four-argument initializer configures defaults and the same version-2 timelock.
+    function test_initializePreservesOriginalSignatureAndDefaults() public {
+        bytes memory data = abi.encodeCall(
+            StateOracle.initialize,
+            (STATE_ORACLE_ADMIN, new IAdminVerifier[](0), new IDAVerifier[](0), MAX_ASSERTIONS_PER_AA)
+        );
+        StateOracle configuredOracle = StateOracle(deployProxy(address(new StateOracle(TIMEOUT)), data));
+        assertEq(configuredOracle.owner(), STATE_ORACLE_ADMIN);
+        assertEq(configuredOracle.maxAssertionsPerAA(), MAX_ASSERTIONS_PER_AA);
+        assertTrue(configuredOracle.whitelistEnabled());
+        assertFalse(configuredOracle.whitelist(STATE_ORACLE_ADMIN));
+        assertEq(configuredOracle.timelock().ORACLE(), address(configuredOracle));
+        assertEq(configuredOracle.administrationDelay(), 3 days);
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        configuredOracle.initialize(OWNER, new IAdminVerifier[](0), new IDAVerifier[](0), 1);
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        configuredOracle.initializeWithWhitelist(
+            OWNER, new IAdminVerifier[](0), new IDAVerifier[](0), 1, false, new address[](0)
+        );
+    }
+
+    /// @notice An initialized proxy cannot run the fresh initializer again.
     function test_RevertIf_alreadyInitialized() public {
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        stateOracle.initializeWithWhitelist(
+            OWNER, new IAdminVerifier[](0), new IDAVerifier[](0), MAX_ASSERTIONS_PER_AA, true, new address[](0)
+        );
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         stateOracle.initialize(OWNER, new IAdminVerifier[](0), new IDAVerifier[](0), MAX_ASSERTIONS_PER_AA);
     }
 
+    /// @notice Implementation contracts cannot be initialized directly.
     function test_RevertIf_initializeNonProxy() public {
         stateOracle = new StateOracle(TIMEOUT);
         assertEq(stateOracle.owner(), address(0), "Owner should be address(0)");
@@ -103,6 +139,10 @@ contract Initialize is StateOracleBase {
         verifiers[0] = adminVerifier;
         IDAVerifier[] memory daVerifiers = new IDAVerifier[](1);
         daVerifiers[0] = daVerifierMock;
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        stateOracle.initializeWithWhitelist(
+            STATE_ORACLE_ADMIN, verifiers, daVerifiers, MAX_ASSERTIONS_PER_AA, true, new address[](0)
+        );
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         stateOracle.initialize(STATE_ORACLE_ADMIN, verifiers, daVerifiers, MAX_ASSERTIONS_PER_AA);
     }
@@ -128,6 +168,10 @@ contract Initialize is StateOracleBase {
         assertTrue(configuredOracle.isWhitelisted(address(0xCAFE)));
     }
 
+    /// @notice Deploys a fresh oracle with explicit admission configuration.
+    /// @param enabled Initial whitelist switch.
+    /// @param initialWhitelist Initial admitted callers.
+    /// @return configuredOracle Initialized oracle proxy.
     function _deployWithWhitelist(bool enabled, address[] memory initialWhitelist)
         internal
         returns (StateOracle configuredOracle)

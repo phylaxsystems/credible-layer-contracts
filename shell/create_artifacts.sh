@@ -43,11 +43,11 @@ forge build
 
 # The latest versioned interface is the canonical consumer boundary used by the
 # Rust crate. Historical interfaces intentionally differ from the current
-# implementation and remain immutable. Refuse to publish if V2 drifts.
+# implementation and remain immutable. Refuse to publish if V3 drifts.
 if ! diff -u \
   <(normalize_public_abi "$ROOT_DIR/out/StateOracle.sol/StateOracle.json") \
-  <(normalize_public_abi "$ROOT_DIR/out/IStateOracleV2.sol/IStateOracleV2.json"); then
-  echo "StateOracle implementation ABI differs from IStateOracleV2" >&2
+  <(normalize_public_abi "$ROOT_DIR/out/IStateOracleV3.sol/IStateOracleV3.json"); then
+  echo "StateOracle implementation ABI differs from IStateOracleV3" >&2
   exit 1
 fi
 
@@ -62,6 +62,7 @@ mkdir -p "$ARTIFACTS" \
 
 # Extract ABIs for main contracts
 extract_abi "$ROOT_DIR/out/StateOracle.sol/StateOracle.json" "${ARTIFACTS}"
+extract_abi "$ROOT_DIR/out/StateOracleTimelock.sol/StateOracleTimelock.json" "${ARTIFACTS}"
 extract_abi "$ROOT_DIR/out/AdminVerifierOwner.sol/AdminVerifierOwner.json" "${ARTIFACTS}"
 extract_abi "$ROOT_DIR/out/DAVerifierECDSA.sol/DAVerifierECDSA.json" "${ARTIFACTS}"
 
@@ -72,6 +73,7 @@ extract_abi "$ROOT_DIR/out/IDAVerifier.sol/IDAVerifier.json" "${INTERFACES}"
 extract_abi "$ROOT_DIR/out/IAdminVerifier.sol/IAdminVerifier.json" "${INTERFACES}"
 extract_abi "$ROOT_DIR/out/IStateOracleV1.sol/IStateOracleV1.json" "${INTERFACES}"
 extract_abi "$ROOT_DIR/out/IStateOracleV2.sol/IStateOracleV2.json" "${INTERFACES}"
+extract_abi "$ROOT_DIR/out/IStateOracleV3.sol/IStateOracleV3.json" "${INTERFACES}"
 
 # Extract ABIs for libraries
 LIBRARIES="${ARTIFACTS}/libraries"
@@ -86,3 +88,5 @@ cp "${INTERFACES}/IStateOracleV1.json" "${RUST_BINDINGS_ABI}/IStateOracleV1.json
 echo "Synced IStateOracleV1 ABI to ${RUST_BINDINGS_ABI}/IStateOracleV1.json"
 cp "${INTERFACES}/IStateOracleV2.json" "${RUST_BINDINGS_ABI}/IStateOracleV2.json"
 echo "Synced IStateOracleV2 ABI to ${RUST_BINDINGS_ABI}/IStateOracleV2.json"
+cp "${INTERFACES}/IStateOracleV3.json" "${RUST_BINDINGS_ABI}/IStateOracleV3.json"
+echo "Synced IStateOracleV3 ABI to ${RUST_BINDINGS_ABI}/IStateOracleV3.json"

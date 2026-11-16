@@ -15,6 +15,11 @@ pub mod state_oracle {
     pub mod v2 {
         alloy_sol_types::sol!(IStateOracleV2, "abi/IStateOracleV2.json");
     }
+
+    /// Unreleased delayed-administration interface; use only with migrated deployments.
+    pub mod v3 {
+        alloy_sol_types::sol!(IStateOracleV3, "abi/IStateOracleV3.json");
+    }
 }
 
 #[cfg(test)]

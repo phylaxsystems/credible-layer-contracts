@@ -14,6 +14,7 @@ import {DAVerifierMock} from "./utils/DAVerifierMock.sol";
 import {ProxyHelper} from "./utils/ProxyHelper.t.sol";
 import {StateOracleWindowLayoutBaseline} from "./utils/StateOracleWindowLayoutBaseline.sol";
 
+/// @notice Tests in-place upgrade of populated legacy oracle storage.
 contract StateOracleUpgradeTest is ProxyHelper {
     uint256 constant TIMELOCK = 100;
     uint16 constant MAX_ASSERTIONS = 7;
@@ -37,6 +38,7 @@ contract StateOracleUpgradeTest is ProxyHelper {
     IDAVerifier daVerifier;
     StateOracle stateOracle;
 
+    /// @notice Seeds a legacy proxy and migrates it atomically through its existing ProxyAdmin.
     function setUp() public {
         vm.roll(OLD_DEACTIVATION - 1);
         oracleOwner = makeAddr("oracle owner");
@@ -75,7 +77,11 @@ contract StateOracleUpgradeTest is ProxyHelper {
         ProxyAdmin proxyAdmin = ProxyAdmin(getProxyAdmin(address(proxy)));
         assertEq(proxyAdmin.owner(), ADMIN, "Upgrade must use the existing ProxyAdmin owner");
         vm.prank(ADMIN);
-        proxyAdmin.upgradeAndCall(ITransparentUpgradeableProxy(address(proxy)), address(implementation), "");
+        proxyAdmin.upgradeAndCall(
+            ITransparentUpgradeableProxy(address(proxy)),
+            address(implementation),
+            abi.encodeCall(StateOracle.initializeTimelockV2, ())
+        );
         stateOracle = StateOracle(address(proxy));
 
         assertEq(
@@ -119,7 +125,12 @@ contract StateOracleUpgradeTest is ProxyHelper {
         _assertWindow(REMOVED_ASSERTION, REMOVED_ACTIVATION, OLD_DEACTIVATION);
     }
 
+    /// @notice Both fresh initializers reject an already initialized upgraded proxy.
     function test_upgradePreservesInitializationGuard() public {
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        stateOracle.initializeWithWhitelist(
+            nextOwner, new IAdminVerifier[](0), new IDAVerifier[](0), MAX_ASSERTIONS, true, new address[](0)
+        );
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         stateOracle.initialize(nextOwner, new IAdminVerifier[](0), new IDAVerifier[](0), MAX_ASSERTIONS);
         assertEq(stateOracle.owner(), oracleOwner);

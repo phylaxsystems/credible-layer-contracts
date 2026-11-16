@@ -10,12 +10,14 @@ import {IAdminVerifier} from "../../src/interfaces/IAdminVerifier.sol";
 import {IDAVerifier} from "../../src/interfaces/IDAVerifier.sol";
 import {AdminVerifierOwner} from "../../src/verification/admin/AdminVerifierOwner.sol";
 
+/// @notice Exercises assertion registration with ECDSA data-availability proofs.
 contract StateOracleWithDAVerifierECDSATest is StateOracleBase {
     address adopter;
     IDAVerifier ecdsaDAVerifier;
     uint256 immutable PROVER =
         uint256(keccak256(abi.encode("pcl.test.integration.StateOracleWithDAVerifierECDSA.PROVER")));
 
+    /// @notice Initializes a fresh oracle with the ECDSA verifier and test prover.
     function setUp() public override {
         DAVerifierECDSA ecdsaVerifier = new DAVerifierECDSA(vm.addr(PROVER));
         ecdsaDAVerifier = IDAVerifier(address(ecdsaVerifier));
@@ -24,8 +26,15 @@ contract StateOracleWithDAVerifierECDSATest is StateOracleBase {
         verifiers[0] = adminVerifier;
         IDAVerifier[] memory daVfrs = new IDAVerifier[](1);
         daVfrs[0] = ecdsaDAVerifier;
-        bytes memory data =
-            abi.encodeWithSelector(StateOracle.initialize.selector, ADMIN, verifiers, daVfrs, MAX_ASSERTIONS_PER_AA);
+        bytes memory data = abi.encodeWithSelector(
+            StateOracle.initializeWithWhitelist.selector,
+            ADMIN,
+            verifiers,
+            daVfrs,
+            MAX_ASSERTIONS_PER_AA,
+            true,
+            new address[](0)
+        );
         stateOracle = StateOracle(deployProxy(address(new StateOracle(TIMEOUT)), data));
 
         // Disable whitelist for testing
