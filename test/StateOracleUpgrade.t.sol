@@ -6,6 +6,7 @@ import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transp
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {Initializable} from "solady/utils/Initializable.sol";
 import {StateOracle} from "../src/StateOracle.sol";
+import {StateOracleAccessControl} from "../src/StateOracleAccessControl.sol";
 import {IAdminVerifier} from "../src/interfaces/IAdminVerifier.sol";
 import {IDAVerifier} from "../src/interfaces/IDAVerifier.sol";
 import {AdminVerifierOwner} from "../src/verification/admin/AdminVerifierOwner.sol";
@@ -134,6 +135,23 @@ contract StateOracleUpgradeTest is ProxyHelper {
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         stateOracle.initialize(nextOwner, new IAdminVerifier[](0), new IDAVerifier[](0), MAX_ASSERTIONS);
         assertEq(stateOracle.owner(), oracleOwner);
+    }
+
+    /// @notice A pre-upgrade nomination needs a fresh delayed authorization before acceptance.
+    function test_legacyPendingOwnerCannotAcceptWithoutFreshDelay() public {
+        vm.prank(nextOwner);
+        vm.expectRevert(StateOracleAccessControl.OwnershipNotReady.selector);
+        stateOracle.acceptOwnership();
+        vm.prank(oracleOwner);
+        stateOracle.transferOwnership(nextOwner);
+        vm.prank(nextOwner);
+        vm.expectRevert(StateOracleAccessControl.OwnershipNotReady.selector);
+        stateOracle.acceptOwnership();
+        executeLast(stateOracle);
+        vm.prank(nextOwner);
+        stateOracle.acceptOwnership();
+        assertEq(stateOracle.owner(), nextOwner);
+        _assertWindow(OPEN_ASSERTION, OPEN_ACTIVATION, 0);
     }
 
     function test_upgradeReaddWaitsForPreservedDeactivation() public {

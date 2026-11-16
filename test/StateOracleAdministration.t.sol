@@ -4,6 +4,8 @@ pragma solidity ^0.8.28;
 import {StateOracle} from "../src/StateOracle.sol";
 import {StateOracleTimelock} from "../src/StateOracleTimelock.sol";
 import {StateOracleAdministration} from "../src/StateOracleAdministration.sol";
+import {StateOracleAccessControl} from "../src/StateOracleAccessControl.sol";
+import {Batch} from "../src/Batch.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
@@ -246,5 +248,129 @@ contract StateOracleAdministrationTest is ProxyHelper {
         (, writes) = vm.accesses(address(target));
         assertEq(writes.length, 0);
         assertTrue(target.timelock().isOperationDone(id));
+    }
+
+    /// @notice Every delegatable role waits D for grants, revocations and self-renunciation.
+    function test_allRolesWaitForGrantRevokeAndSelfRenunciation() public {
+        bytes32[5] memory roles = [
+            oracle.GOVERNANCE_ROLE(),
+            oracle.GUARDIAN_ADMIN_ROLE(),
+            oracle.GUARDIAN_ROLE(),
+            oracle.OPERATOR_ADMIN_ROLE(),
+            oracle.OPERATOR_ROLE()
+        ];
+        address account = address(0xB0B);
+        for (uint256 i; i < roles.length; ++i) {
+            vm.prank(governor);
+            oracle.grantRole(roles[i], account);
+            bytes32 id = oracle.latestAdministrationOperation();
+            assertFalse(oracle.hasRole(roles[i], account));
+            vm.warp(oracle.administrationOperation(id).readyAt - 1);
+            vm.expectPartialRevert(TimelockController.TimelockUnexpectedOperationState.selector);
+            oracle.executeAdministration(id);
+            _execute(oracle, id);
+            assertTrue(oracle.hasRole(roles[i], account));
+            vm.prank(governor);
+            oracle.revokeRole(roles[i], account);
+            assertTrue(oracle.hasRole(roles[i], account));
+            executeLast(oracle);
+            assertFalse(oracle.hasRole(roles[i], account));
+            vm.prank(governor);
+            oracle.grantRole(roles[i], account);
+            executeLast(oracle);
+            vm.prank(account);
+            oracle.renounceRole(roles[i], account);
+            assertTrue(oracle.hasRole(roles[i], account));
+            executeLast(oracle);
+            assertFalse(oracle.hasRole(roles[i], account));
+        }
+    }
+
+    /// @notice Pending roles confer no authority and neither callbacks nor batching bypass the delay.
+    function test_roleEscalationCallbacksAndBatchCannotSkipWait() public {
+        bytes32 role = oracle.GUARDIAN_ADMIN_ROLE();
+        address account = address(0xB0B);
+        vm.prank(governor);
+        oracle.grantRole(role, account);
+        bytes32 id = oracle.latestAdministrationOperation();
+        vm.prank(account);
+        vm.expectPartialRevert(bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")));
+        oracle.grantGuardianRole(account);
+        vm.prank(governor);
+        vm.expectRevert(StateOracleAdministration.CallerNotTimelock.selector);
+        oracle.applyRoleChange(role, account, true);
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = abi.encodeCall(oracle.executeAdministration, (id));
+        vm.prank(governor);
+        vm.expectPartialRevert(Batch.BatchError.selector);
+        oracle.batch(calls);
+        vm.prank(governor);
+        vm.expectPartialRevert(StateOracleAdministration.AdministrationOperationPending.selector);
+        oracle.revokeRole(role, account);
+        _execute(oracle, id);
+        vm.prank(account);
+        oracle.grantGuardianRole(account);
+        assertFalse(oracle.hasRole(oracle.GUARDIAN_ROLE(), account));
+    }
+
+    /// @notice Ownership requires a matured exact nomination and preserves the owner/default-admin invariant.
+    function test_ownershipEligibilityBindsExactRecipientAndPreservesRoles() public {
+        address first = address(0xB0B);
+        address second = address(0xCAFE);
+        vm.record();
+        vm.prank(governor);
+        oracle.transferOwnership(first);
+        (, bytes32[] memory writes) = vm.accesses(address(oracle));
+        assertEq(writes.length, 1);
+        assertEq(writes[0], bytes32(uint256(1)), "Only existing pendingOwner changes");
+        vm.prank(first);
+        vm.expectRevert(StateOracleAccessControl.OwnershipNotReady.selector);
+        oracle.acceptOwnership();
+        vm.record();
+        executeLast(oracle);
+        (, writes) = vm.accesses(address(oracle));
+        assertEq(writes.length, 0, "Eligibility lives in the completed controller operation");
+        vm.prank(governor);
+        oracle.transferOwnership(second);
+        vm.prank(second);
+        vm.expectRevert(StateOracleAccessControl.OwnershipNotReady.selector);
+        oracle.acceptOwnership();
+        assertEq(oracle.owner(), governor);
+        executeLast(oracle);
+        vm.prank(first);
+        vm.expectRevert();
+        oracle.acceptOwnership();
+        vm.prank(second);
+        oracle.acceptOwnership();
+        assertEq(oracle.owner(), second);
+        assertTrue(oracle.hasRole(oracle.DEFAULT_ADMIN_ROLE(), second));
+        assertFalse(oracle.hasRole(oracle.DEFAULT_ADMIN_ROLE(), governor));
+        assertTrue(oracle.hasRole(oracle.GUARDIAN_ROLE(), second));
+        assertFalse(oracle.hasRole(oracle.GUARDIAN_ROLE(), governor));
+        vm.prank(second);
+        oracle.renounceOwnership();
+        assertEq(oracle.owner(), second);
+        executeLast(oracle);
+        assertEq(oracle.owner(), address(0));
+        assertTrue(oracle.hasRole(oracle.DEFAULT_ADMIN_ROLE(), address(0)));
+        assertFalse(oracle.hasRole(oracle.DEFAULT_ADMIN_ROLE(), second));
+    }
+
+    /// @notice Generic role mutation cannot break ownership coupling or self-renunciation confirmation.
+    function test_defaultAdminInvariantAndSelfConfirmationCannotBeBypassed() public {
+        bytes32 root = oracle.DEFAULT_ADMIN_ROLE();
+        vm.startPrank(governor);
+        vm.expectRevert(StateOracleAccessControl.CannotGrantDefaultAdminRole.selector);
+        oracle.grantRole(root, address(0xB0B));
+        vm.expectRevert(StateOracleAccessControl.CannotRevokeOwnerDefaultAdminRole.selector);
+        oracle.revokeRole(root, governor);
+        vm.expectRevert(StateOracleAccessControl.CannotRenounceOwnerDefaultAdminRole.selector);
+        oracle.renounceRole(root, governor);
+        bytes32 role = oracle.GUARDIAN_ROLE();
+        vm.expectRevert(bytes4(keccak256("AccessControlBadConfirmation()")));
+        oracle.renounceRole(role, address(0xB0B));
+        vm.expectRevert();
+        oracle.transferOwnership(address(0));
+        vm.stopPrank();
     }
 }

@@ -194,7 +194,7 @@ contract StateOracle is Batch, Initializable, StateOracleAccessControl {
     constructor(uint256 assertionTimelockBlocks) Ownable(msg.sender) {
         require(assertionTimelockBlocks > 0, InvalidAssertionTimelock());
         ASSERTION_TIMELOCK_BLOCKS = assertionTimelockBlocks;
-        renounceOwnership();
+        _transferOwnership(address(0));
         _disableInitializers();
     }
 

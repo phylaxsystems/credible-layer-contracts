@@ -55,6 +55,7 @@ contract StateOracleAccessControlBase is Test, ProxyHelper {
     }
 }
 
+/// @notice Tests ownership and its coupled default-admin role.
 contract OwnableTest is StateOracleAccessControlBase {
     function test_ownerIsZeroOnImplementation() public {
         StateOracle implementation = new StateOracle(TIMEOUT);
@@ -65,6 +66,7 @@ contract OwnableTest is StateOracleAccessControlBase {
         assertEq(stateOracle.owner(), STATE_ORACLE_ADMIN, "proxy owner should match initializer");
     }
 
+    /// @notice Ownership changes only after delayed authorization and acceptance.
     function test_transferOwnership() public {
         address newOwner = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.NEW_OWNER")))));
 
@@ -80,6 +82,7 @@ contract OwnableTest is StateOracleAccessControlBase {
 
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.transferOwnership(newOwner);
+        executeLast(stateOracle);
         assertEq(stateOracle.owner(), STATE_ORACLE_ADMIN, "ownership transfer should be pending");
 
         // DEFAULT_ADMIN_ROLE should not transfer until ownership is accepted
@@ -107,6 +110,7 @@ contract OwnableTest is StateOracleAccessControlBase {
         );
     }
 
+    /// @notice An accepted successor can schedule and execute governance grants.
     function test_newOwnerCanGrantRolesAsOwner() public {
         address newOwner = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.NEW_OWNER")))));
         address governance = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.GOVERNANCE")))));
@@ -114,6 +118,7 @@ contract OwnableTest is StateOracleAccessControlBase {
         // Transfer ownership (which includes DEFAULT_ADMIN_ROLE)
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.transferOwnership(newOwner);
+        executeLast(stateOracle);
 
         vm.prank(newOwner);
         stateOracle.acceptOwnership();
@@ -121,6 +126,7 @@ contract OwnableTest is StateOracleAccessControlBase {
         // New owner (with DEFAULT_ADMIN_ROLE) can grant GOVERNANCE_ROLE via onlyOwner functions
         vm.prank(newOwner);
         stateOracle.grantGovernanceRole(governance);
+        executeLast(stateOracle);
 
         assertTrue(
             stateOracle.hasRole(stateOracle.GOVERNANCE_ROLE(), governance), "New owner can grant governance role"
@@ -128,7 +134,9 @@ contract OwnableTest is StateOracleAccessControlBase {
     }
 }
 
+/// @notice Tests delayed ownership renunciation.
 contract RenounceOwnershipTest is StateOracleAccessControlBase {
+    /// @notice Renunciation preserves the one-to-one owner/default-admin invariant.
     function test_renounceOwnershipMaintainsInvariant() public {
         // Before: owner has DEFAULT_ADMIN_ROLE
         assertEq(stateOracle.owner(), STATE_ORACLE_ADMIN);
@@ -137,6 +145,7 @@ contract RenounceOwnershipTest is StateOracleAccessControlBase {
         // Renounce
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.renounceOwnership();
+        executeLast(stateOracle);
 
         // After: address(0) is owner and has DEFAULT_ADMIN_ROLE (invariant maintained!)
         assertEq(stateOracle.owner(), address(0));
@@ -150,6 +159,7 @@ contract RenounceOwnershipTest is StateOracleAccessControlBase {
     }
 }
 
+/// @notice Tests authorized operator grants through generic and typed entrypoints.
 contract GrantOperatorRole is StateOracleAccessControlBase {
     function test_stateOracleAdminHasDefaultAdminRole() public view {
         assertTrue(
@@ -158,6 +168,7 @@ contract GrantOperatorRole is StateOracleAccessControlBase {
         );
     }
 
+    /// @notice The owner's generic operator grant takes effect after execution.
     function test_ownerCanGrantOperatorRole() public {
         address newOperator = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.NEW_OPERATOR")))));
 
@@ -168,12 +179,14 @@ contract GrantOperatorRole is StateOracleAccessControlBase {
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.grantRole(stateOracle.OPERATOR_ROLE(), newOperator);
         vm.stopPrank();
+        executeLast(stateOracle);
 
         assertTrue(
             stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), newOperator), "Operator should have role after grant"
         );
     }
 
+    /// @notice The typed operator grant follows the same delayed policy.
     function test_ownerCanGrantOperatorRoleUsingHelper() public {
         address newOperator = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.NEW_OPERATOR")))));
 
@@ -183,6 +196,7 @@ contract GrantOperatorRole is StateOracleAccessControlBase {
 
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.grantOperatorRole(newOperator);
+        executeLast(stateOracle);
 
         assertTrue(
             stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), newOperator), "Operator should have role after grant"
@@ -233,34 +247,42 @@ contract GrantOperatorRole is StateOracleAccessControlBase {
     }
 }
 
+/// @notice Fixture with an effective operator grant.
 contract RevokeOperatorRoleBase is StateOracleAccessControlBase {
     address constant OPERATOR = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.OPERATOR")))));
 
+    /// @notice Executes the operator grant before testing revocation.
     function setUp() public virtual override {
         super.setUp();
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.grantOperatorRole(OPERATOR);
+        executeLast(stateOracle);
     }
 }
 
+/// @notice Tests operator revocation through both authorized entrypoints.
 contract RevokeOperatorRole is RevokeOperatorRoleBase {
+    /// @notice Generic revocation removes the operator after execution.
     function test_ownerCanRevokeOperatorRole() public {
         assertTrue(stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), OPERATOR), "Operator should have role initially");
 
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.revokeRole(stateOracle.OPERATOR_ROLE(), OPERATOR);
         vm.stopPrank();
+        executeLast(stateOracle);
 
         assertFalse(
             stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), OPERATOR), "Operator should not have role after revoke"
         );
     }
 
+    /// @notice Typed revocation removes the operator after execution.
     function test_ownerCanRevokeOperatorRoleUsingHelper() public {
         assertTrue(stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), OPERATOR), "Operator should have role initially");
 
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.revokeOperatorRole(OPERATOR);
+        executeLast(stateOracle);
 
         assertFalse(
             stateOracle.hasRole(stateOracle.OPERATOR_ROLE(), OPERATOR), "Operator should not have role after revoke"
@@ -309,7 +331,9 @@ contract RevokeOperatorRole is RevokeOperatorRoleBase {
     }
 }
 
+/// @notice Tests guardian-admin grants.
 contract GrantGuardianAdminRole is StateOracleAccessControlBase {
+    /// @notice The owner can execute a delayed guardian-admin grant.
     function test_ownerCanGrantGuardianAdminRole() public {
         address newGuardianAdmin =
             address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.NEW_GUARDIAN_ADMIN")))));
@@ -320,6 +344,7 @@ contract GrantGuardianAdminRole is StateOracleAccessControlBase {
 
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.grantGuardianAdminRole(newGuardianAdmin);
+        executeLast(stateOracle);
 
         assertTrue(
             stateOracle.hasRole(stateOracle.GUARDIAN_ADMIN_ROLE(), newGuardianAdmin),
@@ -343,16 +368,20 @@ contract GrantGuardianAdminRole is StateOracleAccessControlBase {
     }
 }
 
+/// @notice Tests guardian-admin revocation.
 contract RevokeGuardianAdminRole is StateOracleAccessControlBase {
     address constant GUARDIAN_ADMIN_TO_REVOKE =
         address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.GUARDIAN_ADMIN_TO_REVOKE")))));
 
+    /// @notice Executes the grant used by revocation tests.
     function setUp() public virtual override {
         super.setUp();
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.grantGuardianAdminRole(GUARDIAN_ADMIN_TO_REVOKE);
+        executeLast(stateOracle);
     }
 
+    /// @notice The owner can execute a delayed guardian-admin revocation.
     function test_ownerCanRevokeGuardianAdminRole() public {
         assertTrue(
             stateOracle.hasRole(stateOracle.GUARDIAN_ADMIN_ROLE(), GUARDIAN_ADMIN_TO_REVOKE),
@@ -361,6 +390,7 @@ contract RevokeGuardianAdminRole is StateOracleAccessControlBase {
 
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.revokeGuardianAdminRole(GUARDIAN_ADMIN_TO_REVOKE);
+        executeLast(stateOracle);
 
         assertFalse(
             stateOracle.hasRole(stateOracle.GUARDIAN_ADMIN_ROLE(), GUARDIAN_ADMIN_TO_REVOKE),
@@ -381,7 +411,9 @@ contract RevokeGuardianAdminRole is StateOracleAccessControlBase {
     }
 }
 
+/// @notice Tests guardian grants under guardian-admin authorization.
 contract GrantGuardianRole is StateOracleAccessControlBase {
+    /// @notice A guardian admin can execute a delayed guardian grant.
     function test_guardianAdminCanGrantGuardianRole() public {
         address newGuardian = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.NEW_GUARDIAN")))));
         assertFalse(
@@ -390,6 +422,7 @@ contract GrantGuardianRole is StateOracleAccessControlBase {
 
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.grantGuardianRole(newGuardian);
+        executeLast(stateOracle);
 
         assertTrue(
             stateOracle.hasRole(stateOracle.GUARDIAN_ROLE(), newGuardian), "Guardian should have role after grant"
@@ -418,22 +451,28 @@ contract GrantGuardianRole is StateOracleAccessControlBase {
     }
 }
 
+/// @notice Fixture with an effective guardian grant.
 contract GuardianRoleBase is StateOracleAccessControlBase {
     address constant GUARDIAN = address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.GUARDIAN")))));
 
+    /// @notice Executes the guardian grant before revocation tests.
     function setUp() public virtual override {
         super.setUp();
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.grantGuardianRole(GUARDIAN);
+        executeLast(stateOracle);
     }
 }
 
+/// @notice Tests guardian revocation under guardian-admin authorization.
 contract RevokeGuardianRole is GuardianRoleBase {
+    /// @notice A guardian admin can execute a delayed guardian revocation.
     function test_guardianAdminCanRevokeGuardianRole() public {
         assertTrue(stateOracle.hasRole(stateOracle.GUARDIAN_ROLE(), GUARDIAN), "Guardian should have role initially");
 
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.revokeGuardianRole(GUARDIAN);
+        executeLast(stateOracle);
 
         assertFalse(
             stateOracle.hasRole(stateOracle.GUARDIAN_ROLE(), GUARDIAN), "Guardian should not have role after revoke"
@@ -460,7 +499,9 @@ contract RevokeGuardianRole is GuardianRoleBase {
     }
 }
 
+/// @notice Tests operator-admin grants.
 contract GrantOperatorAdminRole is StateOracleAccessControlBase {
+    /// @notice The owner can execute a delayed operator-admin grant.
     function test_ownerCanGrantOperatorAdminRole() public {
         address newOperatorAdmin =
             address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.NEW_OPERATOR_ADMIN")))));
@@ -471,6 +512,7 @@ contract GrantOperatorAdminRole is StateOracleAccessControlBase {
 
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.grantOperatorAdminRole(newOperatorAdmin);
+        executeLast(stateOracle);
 
         assertTrue(
             stateOracle.hasRole(stateOracle.OPERATOR_ADMIN_ROLE(), newOperatorAdmin),
@@ -494,16 +536,20 @@ contract GrantOperatorAdminRole is StateOracleAccessControlBase {
     }
 }
 
+/// @notice Tests operator-admin revocation.
 contract RevokeOperatorAdminRole is StateOracleAccessControlBase {
     address constant OPERATOR_ADMIN_TO_REVOKE =
         address(uint160(uint256(keccak256(abi.encode("pcl.test.StateOracle.OPERATOR_ADMIN_TO_REVOKE")))));
 
+    /// @notice Executes the operator-admin grant before revocation tests.
     function setUp() public virtual override {
         super.setUp();
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.grantOperatorAdminRole(OPERATOR_ADMIN_TO_REVOKE);
+        executeLast(stateOracle);
     }
 
+    /// @notice The owner can execute a delayed operator-admin revocation.
     function test_ownerCanRevokeOperatorAdminRole() public {
         assertTrue(
             stateOracle.hasRole(stateOracle.OPERATOR_ADMIN_ROLE(), OPERATOR_ADMIN_TO_REVOKE),
@@ -512,6 +558,7 @@ contract RevokeOperatorAdminRole is StateOracleAccessControlBase {
 
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.revokeOperatorAdminRole(OPERATOR_ADMIN_TO_REVOKE);
+        executeLast(stateOracle);
 
         assertFalse(
             stateOracle.hasRole(stateOracle.OPERATOR_ADMIN_ROLE(), OPERATOR_ADMIN_TO_REVOKE),
