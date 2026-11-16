@@ -80,7 +80,7 @@ Only that oracle proxy proposes/executes through it; it has no external administ
 Existing proxies deploy their own controller through `initializeTimelockV2()` using Solady
 `reinitializer(2)` in a ProxyAdmin `upgradeAndCall`. Only the actual proxy admin can invoke that migration.
 Fresh deployments use the normal initializer to deploy their controller in the same transaction.
-ProxyAdmin ownership handover and delayed upgrade wrappers are deferred to ENG-6421 at this layer.
+Upgrade authority uses the separate controller described below.
 Admin-verifier internal approval/ownership policy is unchanged (ENG-6426 is separate).
 Legacy revocations have no stored timestamp, so migration does not invent a retroactive recovery
 deadline for adopters that already had no manager.
@@ -94,6 +94,58 @@ new oracle storage is its controller address in the ERC-7201 namespace
 ownership eligibility derives from its completed nomination operation. Setup also updates the existing
 Solady initialization-version slot. Later implementation upgrades must retain the namespace and controller
 history; rotating controllers is not part of this stack.
+
+### Separate upgrade timelock
+
+`StateOracleUpgradeTimelock` is directly deployed and owns both existing ProxyAdmins. Its independent
+delay starts at three days and cannot go below three days. It does not synchronize with the
+administration timelock. Neither scheduling nor execution calls through an oracle implementation.
+
+- The single `upgradeAuthority` (initially the Safe) calls the upgrade controller's standard
+  `schedule(target, 0, data, predecessor, salt, delay)` and later
+  `execute(target, 0, data, predecessor, salt)`. Execution is **not permissionless**. Read the operation
+  ID from `CallScheduled` or `hashOperation(...)`, and its deadline from `getTimestamp(id)`.
+- For upgrades, `target` is one of the two immutable ProxyAdmins; `data` must encode
+  `ProxyAdmin.upgradeAndCall(itsOwnProxy, implementation, migrationData)`. The controller checks the
+  exact configured pair and ProxyAdmin ownership at scheduling and execution. It records the
+  implementation runtime code hash at scheduling and checks it again at execution. Timelock hashing
+  binds the entire payload, value, predecessor and salt. Only one upgrade may be pending per proxy.
+- The only self-targeted calls are `updateDelay(newDelay)` and
+  `updateUpgradeAuthority(newAuthority)`. Both are scheduled/executed with the same API and wait the
+  current upgrade delay. Each setting has at most one pending change, including already-matured but
+  unexecuted changes. A queued 3→5 change must execute before a 5→3 change can be scheduled.
+- Authority rotation atomically removes both proposer/executor roles from the old address and grants
+  both to the new one. The controller remains the ProxyAdmins' owner. Previously queued operations
+  retain their deadlines, but only the new authority can execute them after rotation. Rotate while
+  the old authority remains available: there is no lost-key recovery bypass.
+- No arbitrary targets, ProxyAdmin ownership transfers, generic role mutations, cancellation, open
+  execution or controller batch entrypoints are supported. Two independently queued upgrades can be
+  executed atomically by the authority's own reverting Safe batch. A permanently reverting proposal
+  blocks its resource; review migration calldata before scheduling.
+
+The initial migration is one reverting Safe MultiSendCallOnly delegatecall containing four CALLs:
+production `ProxyAdmin.upgradeAndCall` with `initializeTimelockV2()`, the corresponding
+alerting upgrade, then each existing `ProxyAdmin.transferOwnership(upgradeTimelock)`. Deploy the upgrade
+controller and implementations with assertion delays of 75/25 blocks first; verify proxy/admin identities,
+Safe ownership, initialization versions and empty queues at the execution block. The fork test uses
+the deployed Safe and deployed MultiSendCallOnly with locally impersonated owners, checks rollback
+on a late failure, and exercises later Safe-scheduled/executed upgrades and authority rotation.
+It does not transfer verifier roles: the current admin controller cannot administer those internal
+approvals, and that handover belongs with the separate verifier implementation.
+
+Run the pinned-block rehearsal with an archive-capable `MAINNET_RPC_URL`:
+
+```sh
+MAINNET_RPC_URL=<archive-rpc-url> forge test --match-contract StateOracleUpgradeForkTest -vv
+```
+
+Without that environment variable, the fork suite explicitly skips in setup. Unit tests remain offline.
+Generate/check offline gas snapshots with `FOUNDRY_PROFILE=snapshot forge snapshot` and
+`FOUNDRY_PROFILE=snapshot forge snapshot --check --tolerance 25`; that profile excludes the fork suite.
+The rehearsal uses Ethereum block 26,416,409; rerun with reviewed current state and a final calldata
+manifest before signing. No production transaction or signing ceremony is supplied by these tests.
+Today's ProxyAdmins cannot enforce the first bootstrap notice period. Later upgrades enforce notice
+before replacing code, not safety against malicious implementation code installed after that notice.
 
 ### Deployment
 

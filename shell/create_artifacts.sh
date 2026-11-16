@@ -63,6 +63,7 @@ mkdir -p "$ARTIFACTS" \
 # Extract ABIs for main contracts
 extract_abi "$ROOT_DIR/out/StateOracle.sol/StateOracle.json" "${ARTIFACTS}"
 extract_abi "$ROOT_DIR/out/StateOracleTimelock.sol/StateOracleTimelock.json" "${ARTIFACTS}"
+extract_abi "$ROOT_DIR/out/StateOracleUpgradeTimelock.sol/StateOracleUpgradeTimelock.json" "${ARTIFACTS}"
 extract_abi "$ROOT_DIR/out/AdminVerifierOwner.sol/AdminVerifierOwner.json" "${ARTIFACTS}"
 extract_abi "$ROOT_DIR/out/DAVerifierECDSA.sol/DAVerifierECDSA.json" "${ARTIFACTS}"
 
