@@ -80,6 +80,7 @@ abstract contract StateOracleAssertionFlowBase is Test, ProxyHelper {
         // Disable whitelist for integration tests
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
+        executeLast(stateOracle);
 
         // Deploy adopter and register via verifier-specific logic
         manager = address(uint160(uint256(keccak256(abi.encode("pcl.test.integration.MANAGER")))));

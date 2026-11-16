@@ -61,6 +61,7 @@ contract StateOracleBase is Test, ProxyHelper {
         // Disable whitelist for existing tests
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
+        executeLast(stateOracle);
     }
 
     function registerAssertionAdopter() internal returns (address, address) {
@@ -516,12 +517,16 @@ contract ReaddAssertion is StateOracleBase {
         _assertWindowAndCount(activationBlock, activationBlock, 0);
     }
 
+    /// @notice Re-addition requires effective admission after delayed whitelist changes.
     function test_readdRequiresCurrentWhitelistPermission() public {
         (uint256 activationBlock, uint256 deactivationBlock) = _eligibleAssertion();
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.enableWhitelist();
+        executeLast(stateOracle);
         stateOracle.addToWhitelist(manager);
+        executeLast(stateOracle);
         stateOracle.removeFromWhitelist(manager);
+        executeLast(stateOracle);
         vm.stopPrank();
 
         vm.prank(manager);
@@ -531,6 +536,7 @@ contract ReaddAssertion is StateOracleBase {
 
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(manager);
+        executeLast(stateOracle);
         _add();
         _assertWindowAndCount(block.number + TIMEOUT, 0, 1);
     }
@@ -605,10 +611,12 @@ contract ReaddAssertion is StateOracleBase {
         _assertWindowAndCount(block.number + TIMEOUT, 0, MAX_ASSERTIONS_PER_AA);
     }
 
+    /// @notice Re-addition respects a reduced cap after delayed execution.
     function test_readdHonorsReducedMaximum() public {
         (uint256 activationBlock, uint256 deactivationBlock) = _eligibleAssertion();
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.setMaxAssertionsPerAA(0);
+        executeLast(stateOracle);
 
         vm.prank(manager);
         vm.expectRevert(StateOracle.TooManyAssertions.selector);
@@ -617,6 +625,7 @@ contract ReaddAssertion is StateOracleBase {
 
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.setMaxAssertionsPerAA(1);
+        executeLast(stateOracle);
         _add();
         _assertWindowAndCount(block.number + TIMEOUT, 0, 1);
     }
@@ -1345,10 +1354,14 @@ contract Batch is StateOracleBase {
     }
 }
 
+/// @notice Tests delayed per-adopter assertion-cap configuration.
 contract SetMaxAssertionsPerAA is StateOracleBase {
+    /// @notice A new cap takes effect after execution.
+    /// @param maxAssertionsPerAA Proposed assertion cap.
     function test_setMaxAssertionsPerAA(uint16 maxAssertionsPerAA) public {
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.setMaxAssertionsPerAA(maxAssertionsPerAA);
+        executeLast(stateOracle);
         assertEq(stateOracle.maxAssertionsPerAA(), maxAssertionsPerAA, "Max assertions per AA should have been set");
     }
 
@@ -1370,11 +1383,13 @@ contract SetMaxAssertionsPerAA is StateOracleBase {
         stateOracle.setMaxAssertionsPerAA(maxAssertionsPerAA);
     }
 
+    /// @notice Lowering the cap preserves existing assertions but prevents excess additions.
     function test_AddAssertionsThenLowerMaxAndRevertOnAdd() public {
         // Set initial maxAssertionsPerAA to a high value
         uint16 initialMax = 2;
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.setMaxAssertionsPerAA(initialMax);
+        executeLast(stateOracle);
         assertEq(stateOracle.maxAssertionsPerAA(), initialMax, "Max assertions per AA should have been set");
 
         (address adopter, address manager) = registerAssertionAdopter();
@@ -1387,7 +1402,11 @@ contract SetMaxAssertionsPerAA is StateOracleBase {
         uint16 lowerMax = uint16(initialMax - 1);
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.setMaxAssertionsPerAA(lowerMax);
+        executeLast(stateOracle);
         assertEq(stateOracle.maxAssertionsPerAA(), lowerMax, "Max assertions per AA should be lowered");
+        assertEq(stateOracle.getAssertionCount(adopter), 2, "Lower cap must preserve existing assertions");
+        assertTrue(stateOracle.hasAssertion(adopter, assertionId1));
+        assertTrue(stateOracle.hasAssertion(adopter, assertionId2));
 
         // Attempt to add another assertion and expect revert
         bytes32 newAssertionId = keccak256("newAssertion");
@@ -1495,6 +1514,7 @@ contract WhitelistBase is StateOracleBase {
         // Re-enable whitelist for whitelist tests
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.enableWhitelist();
+        executeLast(stateOracle);
         // Grant OPERATOR_ROLE to STATE_ORACLE_ADMIN for existing whitelist tests
         stateOracle.grantRole(stateOracle.OPERATOR_ROLE(), STATE_ORACLE_ADMIN);
         vm.stopPrank();
@@ -1513,15 +1533,19 @@ contract InitializeWhitelist is WhitelistBase {
     }
 }
 
+/// @notice Tests delayed caller admissions.
 contract AddToWhitelist is WhitelistBase {
+    /// @notice An authorized admission becomes effective after execution.
     function test_addToWhitelist() public {
         assertFalse(stateOracle.isWhitelisted(USER1), "user should not be whitelisted initially");
 
-        vm.expectEmit(true, false, false, false, address(stateOracle));
-        emit StateOracle.AddedToWhitelist(USER1);
-
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
+        bytes32 id = stateOracle.latestAdministrationOperation();
+        vm.warp(stateOracle.administrationOperation(id).readyAt);
+        vm.expectEmit(true, false, false, false, address(stateOracle));
+        emit StateOracle.AddedToWhitelist(USER1);
+        stateOracle.executeAdministration(id);
 
         assertTrue(stateOracle.whitelist(USER1), "user should be whitelisted");
         assertTrue(stateOracle.isWhitelisted(USER1), "user should pass isWhitelisted check");
@@ -1547,9 +1571,11 @@ contract AddToWhitelist is WhitelistBase {
         stateOracle.addToWhitelist(USER1);
     }
 
+    /// @notice Already admitted accounts cannot be added again.
     function test_RevertIf_addAlreadyWhitelistedAccount() public {
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
 
         vm.expectRevert(abi.encodeWithSelector(StateOracle.AlreadyWhitelisted.selector, USER1));
         stateOracle.addToWhitelist(USER1);
@@ -1557,16 +1583,21 @@ contract AddToWhitelist is WhitelistBase {
     }
 }
 
+/// @notice Tests delayed caller removals.
 contract RemoveFromWhitelist is WhitelistBase {
+    /// @notice Removal becomes effective only after delayed execution.
     function test_removeFromWhitelist() public {
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
         assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted");
 
+        stateOracle.removeFromWhitelist(USER1);
+        bytes32 id = stateOracle.latestAdministrationOperation();
+        vm.warp(stateOracle.administrationOperation(id).readyAt);
         vm.expectEmit(true, false, false, false, address(stateOracle));
         emit StateOracle.RemovedFromWhitelist(USER1);
-
-        stateOracle.removeFromWhitelist(USER1);
+        stateOracle.executeAdministration(id);
         vm.stopPrank();
 
         assertFalse(stateOracle.whitelist(USER1), "user should not be whitelisted");
@@ -1603,15 +1634,19 @@ contract RemoveFromWhitelist is WhitelistBase {
     }
 }
 
+/// @notice Tests enabling caller-admission enforcement.
 contract EnableWhitelist is StateOracleBase {
+    /// @notice Caller enforcement starts after delayed execution.
     function test_enableWhitelist() public {
         assertFalse(stateOracle.whitelistEnabled(), "whitelist should be disabled initially");
 
-        vm.expectEmit(false, false, false, false, address(stateOracle));
-        emit StateOracle.WhitelistEnabled();
-
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.enableWhitelist();
+        bytes32 id = stateOracle.latestAdministrationOperation();
+        vm.warp(stateOracle.administrationOperation(id).readyAt);
+        vm.expectEmit(false, false, false, false, address(stateOracle));
+        emit StateOracle.WhitelistEnabled();
+        stateOracle.executeAdministration(id);
 
         assertTrue(stateOracle.whitelistEnabled(), "whitelist should be enabled");
     }
@@ -1635,9 +1670,11 @@ contract EnableWhitelist is StateOracleBase {
         stateOracle.enableWhitelist();
     }
 
+    /// @notice Effective enforcement cannot be enabled again.
     function test_RevertIf_enableAlreadyEnabledWhitelist() public {
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.enableWhitelist();
+        executeLast(stateOracle);
 
         vm.expectRevert(StateOracle.WhitelistAlreadyEnabled.selector);
         stateOracle.enableWhitelist();
@@ -1645,15 +1682,19 @@ contract EnableWhitelist is StateOracleBase {
     }
 }
 
+/// @notice Tests disabling and restoring caller-admission enforcement.
 contract DisableWhitelist is WhitelistBase {
+    /// @notice Caller enforcement stops after delayed execution.
     function test_disableWhitelist() public {
         assertTrue(stateOracle.whitelistEnabled(), "whitelist should be enabled initially");
 
-        vm.expectEmit(false, false, false, false, address(stateOracle));
-        emit StateOracle.WhitelistDisabled();
-
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
+        bytes32 id = stateOracle.latestAdministrationOperation();
+        vm.warp(stateOracle.administrationOperation(id).readyAt);
+        vm.expectEmit(false, false, false, false, address(stateOracle));
+        emit StateOracle.WhitelistDisabled();
+        stateOracle.executeAdministration(id);
 
         assertFalse(stateOracle.whitelistEnabled(), "whitelist should be disabled");
     }
@@ -1677,21 +1718,26 @@ contract DisableWhitelist is WhitelistBase {
         stateOracle.disableWhitelist();
     }
 
+    /// @notice Disabled enforcement cannot be disabled again.
     function test_RevertIf_disableAlreadyDisabledWhitelist() public {
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
+        executeLast(stateOracle);
 
         vm.expectRevert(StateOracle.WhitelistAlreadyDisabled.selector);
         stateOracle.disableWhitelist();
         vm.stopPrank();
     }
 
+    /// @notice Admitted users remain eligible when enforcement is disabled.
     function test_whitelistedUserWhenDisabled() public {
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
         assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted");
 
         stateOracle.disableWhitelist();
+        executeLast(stateOracle);
         vm.stopPrank();
 
         assertTrue(
@@ -1700,9 +1746,11 @@ contract DisableWhitelist is WhitelistBase {
         assertTrue(stateOracle.whitelist(USER1), "user should still be in whitelist mapping");
     }
 
+    /// @notice Unlisted users become eligible after enforcement is disabled.
     function test_nonWhitelistedUserWhenDisabled() public {
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
+        executeLast(stateOracle);
 
         assertTrue(
             stateOracle.isWhitelisted(USER1), "isWhitelisted should return true when disabled (everyone allowed)"
@@ -1710,27 +1758,34 @@ contract DisableWhitelist is WhitelistBase {
         assertFalse(stateOracle.whitelist(USER1), "user should not be in whitelist mapping");
     }
 
+    /// @notice Restoring enforcement preserves previously recorded admissions.
     function test_whitelistedUserAfterReenabling() public {
         vm.startPrank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
         assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted");
 
         stateOracle.disableWhitelist();
+        executeLast(stateOracle);
         assertTrue(
             stateOracle.isWhitelisted(USER1), "isWhitelisted should return true when disabled (everyone allowed)"
         );
 
         stateOracle.enableWhitelist();
         vm.stopPrank();
+        executeLast(stateOracle);
 
         assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted after re-enabling");
     }
 }
 
+/// @notice Tests registration against effective caller admission.
 contract RegisterAssertionAdopterWithWhitelist is WhitelistBase {
+    /// @notice An admitted user can register an adopter after the admission delay.
     function test_registerByWhitelistedUser() public {
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
 
         vm.startPrank(USER1);
         OwnableAdopter adopter = new OwnableAdopter(USER1);
@@ -1754,9 +1809,11 @@ contract RegisterAssertionAdopterWithWhitelist is WhitelistBase {
         vm.stopPrank();
     }
 
+    /// @notice Registration by an unlisted user succeeds after disabling enforcement.
     function test_registerByNonWhitelistedUserWhenDisabled() public {
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
+        executeLast(stateOracle);
 
         vm.startPrank(USER1);
         OwnableAdopter adopter = new OwnableAdopter(USER1);
@@ -1767,11 +1824,14 @@ contract RegisterAssertionAdopterWithWhitelist is WhitelistBase {
     }
 }
 
+/// @notice Tests assertion additions against effective caller admission.
 contract AddAssertionWithWhitelist is WhitelistBase {
+    /// @notice A manager can add assertions after delayed admission.
     function test_addAssertionAfterAddingToWhitelist() public {
         // Add USER1 to whitelist
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
 
         // USER1 registers adopter
         vm.startPrank(USER1);
@@ -1788,10 +1848,13 @@ contract AddAssertionWithWhitelist is WhitelistBase {
         assertTrue(stateOracle.hasAssertion(address(adopter), assertionId), "Assertion should be added");
     }
 
+    /// @notice An unlisted manager cannot add assertions while enforcement is effective.
+    /// @param assertionId Assertion identifier to submit.
     function testFuzz_RevertIf_addAssertionByNonWhitelistedManager(bytes32 assertionId) public {
         // Disable whitelist temporarily to register
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
+        executeLast(stateOracle);
 
         // USER1 registers adopter (not whitelisted but whitelist disabled)
         vm.startPrank(USER1);
@@ -1802,6 +1865,7 @@ contract AddAssertionWithWhitelist is WhitelistBase {
         // Re-enable whitelist
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.enableWhitelist();
+        executeLast(stateOracle);
 
         // USER1 tries to add assertion but is not whitelisted
         vm.prank(USER1);
@@ -1809,10 +1873,12 @@ contract AddAssertionWithWhitelist is WhitelistBase {
         stateOracle.addAssertion(address(adopter), assertionId, daVerifierMock, new bytes(0), new bytes(0));
     }
 
+    /// @notice Managers can add assertions after disabling admission enforcement.
     function test_addAssertionWhenWhitelistDisabled() public {
         // Disable whitelist
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
+        executeLast(stateOracle);
 
         // USER1 registers adopter (not whitelisted but whitelist disabled)
         vm.startPrank(USER1);
@@ -1830,11 +1896,14 @@ contract AddAssertionWithWhitelist is WhitelistBase {
     }
 }
 
+/// @notice Tests that admission policy does not prevent defensive assertion removal.
 contract RemoveAssertionWithWhitelist is WhitelistBase {
+    /// @notice A manager removed from the whitelist can still remove its assertions.
     function test_removeAssertionByNonWhitelistedManager() public {
         // Add USER1 to whitelist and register adopter
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
 
         vm.startPrank(USER1);
         OwnableAdopter adopter = new OwnableAdopter(USER1);
@@ -1850,6 +1919,7 @@ contract RemoveAssertionWithWhitelist is WhitelistBase {
         // Remove USER1 from whitelist
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.removeFromWhitelist(USER1);
+        executeLast(stateOracle);
 
         // USER1 should still be able to remove assertion (no whitelist check on remove)
         vm.roll(block.number + 1);
@@ -1858,6 +1928,16 @@ contract RemoveAssertionWithWhitelist is WhitelistBase {
 
         (, uint256 deactivationBlock) = stateOracle.getAssertionWindow(address(adopter), assertionId);
         assertTrue(deactivationBlock != 0, "Assertion should be marked for removal");
+
+        vm.expectEmit(true, true, true, true);
+        emit StateOracle.StorageReset(address(adopter), bytes32("key"), block.number + TIMEOUT);
+        vm.prank(USER1);
+        stateOracle.resetStorage(address(adopter), bytes32("key"));
+        vm.prank(USER1);
+        stateOracle.transferManager(address(adopter), USER2);
+        vm.prank(USER2);
+        stateOracle.acceptManagerTransfer(address(adopter));
+        assertEq(stateOracle.getManager(address(adopter)), USER2);
     }
 }
 
@@ -1876,24 +1956,30 @@ contract OperatorRoleBase is WhitelistBase {
     }
 }
 
+/// @notice Tests operator-authorized delayed caller-list edits.
 contract OperatorCanManageWhitelist is OperatorRoleBase {
+    /// @notice Operators can execute delayed admission proposals.
     function test_operatorCanAddToWhitelist() public {
         assertFalse(stateOracle.isWhitelisted(USER1), "user should not be whitelisted initially");
 
         vm.prank(OPERATOR);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
 
         assertTrue(stateOracle.whitelist(USER1), "user should be whitelisted");
         assertTrue(stateOracle.isWhitelisted(USER1), "user should pass isWhitelisted check");
     }
 
+    /// @notice Operators can execute delayed removal proposals.
     function test_operatorCanRemoveFromWhitelist() public {
         vm.prank(OPERATOR);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
         assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted");
 
         vm.prank(OPERATOR);
         stateOracle.removeFromWhitelist(USER1);
+        executeLast(stateOracle);
 
         assertFalse(stateOracle.whitelist(USER1), "user should not be whitelisted");
         assertFalse(stateOracle.isWhitelisted(USER1), "user should not pass isWhitelisted check");
@@ -1945,10 +2031,13 @@ contract OperatorCanManageWhitelist is OperatorRoleBase {
     }
 }
 
+/// @notice Tests that an operator cannot use governance or guardian powers.
 contract OwnerOnlyFunctionsRemainProtected is OperatorRoleBase {
+    /// @notice Operators cannot enable caller enforcement.
     function test_operatorCannotEnableWhitelist() public {
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
+        executeLast(stateOracle);
 
         bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
         vm.prank(OPERATOR);
@@ -2006,10 +2095,12 @@ contract OwnerOnlyFunctionsRemainProtected is OperatorRoleBase {
         stateOracle.removeAdminVerifier(adminVerifier);
     }
 
+    /// @notice Operators cannot invoke guardian assertion removal for admitted adopters.
     function test_operatorCannotRemoveAssertionByOwner() public {
         // Setup: Create adopter and assertion
         vm.prank(OPERATOR);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
 
         vm.startPrank(USER1);
         OwnableAdopter adopter = new OwnableAdopter(USER1);
@@ -2054,10 +2145,12 @@ contract OwnerOnlyFunctionsRemainProtected is OperatorRoleBase {
         stateOracle.removeDAVerifier(daVerifierMock);
     }
 
+    /// @notice Operators cannot revoke a registered manager.
     function test_operatorCannotRevokeManager() public {
         // Setup: Create adopter
         vm.prank(OPERATOR);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
 
         vm.startPrank(USER1);
         OwnableAdopter adopter = new OwnableAdopter(USER1);
@@ -2184,11 +2277,14 @@ contract GuardianAdminCanManageGuardians is OperatorRoleBase {
     }
 }
 
+/// @notice Tests immediate guardian actions and boundaries of guardian authority.
 contract GuardianEmergencyActions is GuardianRoleBase {
+    /// @notice Guardians can request assertion removal without waiting the administration delay.
     function test_guardianCanRemoveAssertion() public {
         // Setup: Create adopter and assertion
         vm.prank(OPERATOR);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
 
         vm.startPrank(USER1);
         OwnableAdopter adopter = new OwnableAdopter(USER1);
@@ -2223,10 +2319,12 @@ contract GuardianEmergencyActions is GuardianRoleBase {
         assertEq(stateOracle.getAssertionCount(address(adopter)), 1, "Manager can re-add after guardian removal");
     }
 
+    /// @notice A guardian can immediately revoke a registered manager.
     function test_guardianCanRevokeManager() public {
         // Setup: Create adopter
         vm.prank(OPERATOR);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
 
         vm.startPrank(USER1);
         OwnableAdopter adopter = new OwnableAdopter(USER1);
@@ -2257,9 +2355,11 @@ contract GuardianEmergencyActions is GuardianRoleBase {
         stateOracle.addToWhitelist(USER1);
     }
 
+    /// @notice A guardian cannot remove an effectively whitelisted account.
     function test_guardianCannotRemoveFromWhitelist() public {
         vm.prank(OPERATOR);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
         assertTrue(stateOracle.isWhitelisted(USER1), "user should be whitelisted");
 
         bytes32 operatorRole = stateOracle.OPERATOR_ROLE();
@@ -2272,9 +2372,11 @@ contract GuardianEmergencyActions is GuardianRoleBase {
         stateOracle.removeFromWhitelist(USER1);
     }
 
+    /// @notice A guardian cannot toggle admission enforcement.
     function test_guardianCannotEnableWhitelist() public {
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
+        executeLast(stateOracle);
 
         bytes32 governanceRole = stateOracle.GOVERNANCE_ROLE();
         vm.prank(GUARDIAN);
@@ -2466,10 +2568,12 @@ contract OperatorAdminCanManageOperators is OperatorRoleBase {
         stateOracle.addToWhitelist(USER1);
     }
 
+    /// @notice Operator admins cannot invoke guardian assertion removal.
     function test_operatorAdminCannotRemoveAssertionByOwner() public {
         // Setup: Create adopter and assertion
         vm.prank(OPERATOR);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
 
         vm.startPrank(USER1);
         OwnableAdopter adopter = new OwnableAdopter(USER1);
@@ -2492,10 +2596,12 @@ contract OperatorAdminCanManageOperators is OperatorRoleBase {
         stateOracle.removeAssertionByGuardian(address(adopter), assertionId);
     }
 
+    /// @notice Operator admins cannot revoke a registered manager.
     function test_operatorAdminCannotRevokeManager() public {
         // Setup: Create adopter
         vm.prank(OPERATOR);
         stateOracle.addToWhitelist(USER1);
+        executeLast(stateOracle);
 
         vm.startPrank(USER1);
         OwnableAdopter adopter = new OwnableAdopter(USER1);

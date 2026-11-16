@@ -169,6 +169,10 @@ interface IStateOracleV3 {
     /// @param contractAddress Adopter address.
     /// @param newManager New manager, or zero on revocation.
     event ManagerTransferred(address indexed contractAddress, address indexed newManager);
+    /// @notice A matured capacity change became effective.
+    /// @param previousMaximum Previous assertion cap.
+    /// @param newMaximum New assertion cap.
+    event MaxAssertionsPerAAChanged(uint16 previousMaximum, uint16 newMaximum);
     /// @notice Ownership transfer was proposed.
     /// @param previousOwner Current owner.
     /// @param newOwner Proposed owner.
@@ -253,7 +257,7 @@ interface IStateOracleV3 {
     /// @notice Queues a DA verifier addition after the administration delay under governance authorization.
     /// @param daVerifier Verifier to add.
     function addDAVerifier(address daVerifier) external;
-    /// @notice Adds a caller under operator authorization.
+    /// @notice Queues a caller addition after the administration delay under operator authorization.
     /// @param account Account to admit.
     function addToWhitelist(address account) external;
     /// @notice Reads effective admin-verifier registry membership.
@@ -275,11 +279,21 @@ interface IStateOracleV3 {
     /// @param verifier Affected verifier.
     /// @param registered True to add, false to remove.
     function applyDAVerifierChange(address verifier, bool registered) external;
+    /// @notice Applies a matured capacity proposal, only through this oracle's timelock.
+    /// @param maximum New assertion cap.
+    function applyMaxAssertionsPerAA(uint16 maximum) external;
     /// @notice Applies a matured role change; callable only by this oracle's timelock.
     /// @param role Role to change.
     /// @param account Affected account.
     /// @param grant True to grant, false to revoke.
     function applyRoleChange(bytes32 role, address account, bool grant) external;
+    /// @notice Applies a matured admission proposal, only through this oracle's timelock.
+    /// @param account Affected caller.
+    /// @param allowed True to admit, false to remove.
+    function applyWhitelistAccount(address account, bool allowed) external;
+    /// @notice Applies a matured enforcement toggle, only through this oracle's timelock.
+    /// @param enabled New enforcement flag.
+    function applyWhitelistEnabled(bool enabled) external;
     /// @notice Reads an adopter's manager state and registered assertion count.
     /// @dev The unnamed argument is the adopter address.
     /// @return manager Current manager.
@@ -299,9 +313,9 @@ interface IStateOracleV3 {
     /// @param daVerifier Verifier address.
     /// @return isRegistered Whether the verifier is registered.
     function daVerifiers(address daVerifier) external view returns (bool isRegistered);
-    /// @notice Disables caller admission checks under governance authorization.
+    /// @notice Queues disabling caller admission checks after the administration delay.
     function disableWhitelist() external;
-    /// @notice Enables caller admission checks under governance authorization.
+    /// @notice Queues enabling caller admission checks after the administration delay.
     function enableWhitelist() external;
     /// @notice Permissionlessly relays an exact matured administration proposal.
     /// @param id Recorded operation identifier.
@@ -432,7 +446,7 @@ interface IStateOracleV3 {
     /// @notice Queues a DA verifier removal after the administration delay under governance authorization.
     /// @param daVerifier Verifier to remove.
     function removeDAVerifier(address daVerifier) external;
-    /// @notice Removes a caller under operator authorization.
+    /// @notice Queues caller removal after the administration delay under operator authorization.
     /// @param account Account to remove.
     function removeFromWhitelist(address account) external;
     /// @notice Queues renunciation of ownership and its coupled default-admin role after the current delay.
@@ -471,7 +485,7 @@ interface IStateOracleV3 {
     /// @param newDelay New delay in seconds, at least three days; waits the current delay.
     /// @return Queued operation identifier.
     function scheduleDelayUpdate(uint256 newDelay) external returns (bytes32);
-    /// @notice Updates the assertion cap under governance authorization.
+    /// @notice Queues an assertion-cap change after the administration delay under governance authorization.
     /// @param _maxAssertionsPerAA New cap; existing assertions are not removed.
     function setMaxAssertionsPerAA(uint16 _maxAssertionsPerAA) external;
     /// @notice Checks ERC-165 interface support.

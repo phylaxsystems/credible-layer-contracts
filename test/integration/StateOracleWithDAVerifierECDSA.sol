@@ -40,6 +40,7 @@ contract StateOracleWithDAVerifierECDSATest is StateOracleBase {
         // Disable whitelist for testing
         vm.prank(ADMIN);
         stateOracle.disableWhitelist();
+        executeLast(stateOracle);
 
         vm.startPrank(OWNER);
         adopter = address(new OwnableAdopter(OWNER));

@@ -49,9 +49,14 @@ abstract contract StateOracleAdministration is Initializable {
 
     /// @notice Restricts effective changes to this oracle's deployed controller.
     modifier onlyTimelock() {
+        _checkTimelock();
+        _;
+    }
+
+    /// @notice Shares callback authentication across effective administrative entrypoints.
+    function _checkTimelock() internal view {
         _requireAdministrationReady();
         require(msg.sender == address(timelock()), CallerNotTimelock());
-        _;
     }
 
     /// @notice Rejects administration until fresh initialization or V2 migration deploys the controller.

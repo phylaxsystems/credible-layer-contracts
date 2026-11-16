@@ -52,6 +52,7 @@ contract StateOracleAccessControlBase is Test, ProxyHelper {
         // Disable whitelist for tests
         vm.prank(STATE_ORACLE_ADMIN);
         stateOracle.disableWhitelist();
+        executeLast(stateOracle);
     }
 }
 
